@@ -51,6 +51,7 @@
     "@types/ink-testing-library": "^1.0.4",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.6",
+    "@vitest/ui": "^4.0.10",
     "ink-testing-library": "^4.0.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.10"
