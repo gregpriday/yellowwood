@@ -15,9 +15,10 @@ export function filterTreeByName(tree: TreeNode[], pattern: string): TreeNode[] 
   }
 
   const normalizedPattern = pattern.toLowerCase().trim();
+  const visited = new Set<string>();
 
   return tree
-    .map(node => filterNodeByName(node, normalizedPattern))
+    .map(node => filterNodeByName(node, normalizedPattern, visited))
     .filter((node): node is TreeNode => node !== null);
 }
 
@@ -30,8 +31,9 @@ export function filterTreeByName(tree: TreeNode[], pattern: string): TreeNode[] 
  * @returns Filtered tree with matching nodes and their ancestors
  */
 export function filterTreeByGitStatus(tree: TreeNode[], status: GitStatus): TreeNode[] {
+  const visited = new Set<string>();
   return tree
-    .map(node => filterNodeByGitStatus(node, status))
+    .map(node => filterNodeByGitStatus(node, status, visited))
     .filter((node): node is TreeNode => node !== null);
 }
 
@@ -39,7 +41,14 @@ export function filterTreeByGitStatus(tree: TreeNode[], status: GitStatus): Tree
  * Recursively filter a node by name pattern.
  * Returns the node if it or any descendant matches, null otherwise.
  */
-function filterNodeByName(node: TreeNode, pattern: string): TreeNode | null {
+function filterNodeByName(node: TreeNode, pattern: string, visited: Set<string> = new Set()): TreeNode | null {
+  // Prevent infinite recursion from circular references
+  if (visited.has(node.path)) {
+    return null; // Skip circular references
+  }
+
+  visited.add(node.path);
+
   const nameMatches = matchesFuzzy(node.name.toLowerCase(), pattern);
 
   // For files: include if name matches
@@ -55,7 +64,7 @@ function filterNodeByName(node: TreeNode, pattern: string): TreeNode | null {
   // For folders: check children recursively
   if (node.children) {
     const filteredChildren = node.children
-      .map(child => filterNodeByName(child, pattern))
+      .map(child => filterNodeByName(child, pattern, visited))
       .filter((child): child is TreeNode => child !== null);
 
     // Include folder if it has matching children
@@ -75,7 +84,14 @@ function filterNodeByName(node: TreeNode, pattern: string): TreeNode | null {
  * Recursively filter a node by git status.
  * Returns the node if it or any descendant matches, null otherwise.
  */
-function filterNodeByGitStatus(node: TreeNode, status: GitStatus): TreeNode | null {
+function filterNodeByGitStatus(node: TreeNode, status: GitStatus, visited: Set<string> = new Set()): TreeNode | null {
+  // Prevent infinite recursion from circular references
+  if (visited.has(node.path)) {
+    return null; // Skip circular references
+  }
+
+  visited.add(node.path);
+
   const statusMatches = node.gitStatus === status;
 
   // For files: include if git status matches
@@ -86,7 +102,7 @@ function filterNodeByGitStatus(node: TreeNode, status: GitStatus): TreeNode | nu
   // For folders: check children recursively
   if (node.children) {
     const filteredChildren = node.children
-      .map(child => filterNodeByGitStatus(child, status))
+      .map(child => filterNodeByGitStatus(child, status, visited))
       .filter((child): child is TreeNode => child !== null);
 
     // Include folder if it has matching children
