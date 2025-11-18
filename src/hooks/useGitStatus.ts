@@ -67,7 +67,8 @@ export function useGitStatus(
 	 */
 	const fetchGitStatus = useCallback(async () => {
 		if (!enabled) {
-			// Git status disabled in config - clear state
+			// Git status disabled in config - clear state and invalidate in-flight requests
+			++requestIdRef.current; // Invalidate any pending requests
 			if (isMountedRef.current) {
 				setGitStatus(new Map());
 				setGitEnabled(false);
