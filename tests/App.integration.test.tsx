@@ -2,6 +2,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../src/App.js';
+import { DEFAULT_CONFIG } from '../src/types/index.js';
 
 // Mock the file operations
 vi.mock('../src/utils/fileOpener.js', () => ({
@@ -18,28 +19,44 @@ vi.mock('../src/utils/worktree.js', () => ({
   getCurrentWorktree: vi.fn().mockReturnValue(null),
 }));
 
+vi.mock('../src/utils/config.js');
+
 import { openFile } from '../src/utils/fileOpener.js';
 import { copyFilePath } from '../src/utils/clipboard.js';
+import * as configUtils from '../src/utils/config.js';
+
+// Helper to wait for condition
+async function waitForCondition(fn: () => boolean, timeout = 1000): Promise<void> {
+  const start = Date.now();
+  while (!fn()) {
+    if (Date.now() - start > timeout) {
+      throw new Error('Timeout waiting for condition');
+    }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
 
 describe('App integration - file operations', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Setup default mock for loadConfig
+    vi.mocked(configUtils.loadConfig).mockResolvedValue(DEFAULT_CONFIG);
   });
 
   it('renders without crashing', async () => {
     const { lastFrame } = render(<App cwd="/test" />);
 
-    // Wait for async initialization
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait for async initialization using frame content check
+    await waitForCondition(() => !lastFrame()?.includes('Loading Yellowwood'));
 
     expect(lastFrame()).toBeDefined();
   });
 
   it('shows context menu when opened', async () => {
-    const { lastFrame, stdin } = render(<App cwd="/test" />);
+    const { lastFrame } = render(<App cwd="/test" />);
 
-    // Wait for initialization
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait for initialization using frame content check
+    await waitForCondition(() => !lastFrame()?.includes('Loading Yellowwood'));
 
     // Note: Actually triggering keyboard events and testing context menu interaction
     // would require more complex setup with mock file trees and selection state.
@@ -62,7 +79,8 @@ describe('App integration - file operations', () => {
 
     const { lastFrame } = render(<App cwd="/test" />);
 
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait for initialization using frame content check
+    await waitForCondition(() => !lastFrame()?.includes('Loading Yellowwood'));
 
     // App should not crash on error
     expect(lastFrame()).toBeDefined();
@@ -74,9 +92,27 @@ describe('App integration - file operations', () => {
 
     const { lastFrame } = render(<App cwd="/test" />);
 
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait for initialization using frame content check
+    await waitForCondition(() => !lastFrame()?.includes('Loading Yellowwood'));
 
     // App should not crash on error
     expect(lastFrame()).toBeDefined();
+  });
+
+  it('shows loading screen during initialization', () => {
+    const { lastFrame } = render(<App cwd="/test" />);
+
+    // Initially should show loading
+    expect(lastFrame()).toContain('Loading Yellowwood');
+  });
+
+  it('transitions from loading to ready state', async () => {
+    const { lastFrame } = render(<App cwd="/test" />);
+
+    // Initially loading
+    expect(lastFrame()).toContain('Loading Yellowwood');
+
+    // Wait for lifecycle to complete
+    await waitForCondition(() => !lastFrame()?.includes('Loading Yellowwood'));
   });
 });
