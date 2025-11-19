@@ -4,12 +4,16 @@ import { Header } from './components/Header.js';
 import { TreeView } from './components/TreeView.js';
 import { StatusBar } from './components/StatusBar.js';
 import { CommandBar } from './components/CommandBar.js';
+import { ContextMenu } from './components/ContextMenu.js';
 import { DEFAULT_CONFIG } from './types/index.js';
 import type { YellowwoodConfig, TreeNode, Notification, Worktree } from './types/index.js';
 import { executeCommand } from './commands/index.js';
 import type { CommandContext } from './commands/index.js';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import { getWorktrees, getCurrentWorktree } from './utils/worktree.js';
+import { openFile } from './utils/fileOpener.js';
+import { copyFilePath } from './utils/clipboard.js';
+import path from 'path';
 
 interface AppProps {
   cwd: string;
@@ -35,6 +39,11 @@ const App: React.FC<AppProps> = ({ cwd }) => {
   // Worktree state
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [activeWorktreeId, setActiveWorktreeId] = useState<string | null>(null);
+
+  // Context menu state
+  const [contextMenuOpen, setContextMenuOpen] = useState(false);
+  const [contextMenuTarget, setContextMenuTarget] = useState<string>('');
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
     let isMounted = true;
@@ -122,6 +131,65 @@ const App: React.FC<AppProps> = ({ cwd }) => {
     }
   };
 
+  // Handle opening selected file
+  const handleOpenSelectedFile = async () => {
+    if (!selectedPath) {
+      return;
+    }
+
+    try {
+      await openFile(selectedPath, config);
+      setNotification({
+        type: 'success',
+        message: `Opened ${path.basename(selectedPath)}`,
+      });
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        message: `Failed to open: ${(error as Error).message}`,
+      });
+    }
+  };
+
+  // Handle copying selected path
+  const handleCopySelectedPath = async () => {
+    if (!selectedPath) {
+      return;
+    }
+
+    try {
+      await copyFilePath(selectedPath, cwd, false);
+      setNotification({
+        type: 'success',
+        message: 'Copied to clipboard',
+      });
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        message: `Failed to copy: ${(error as Error).message}`,
+      });
+    }
+  };
+
+  // Handle context menu open
+  const handleOpenContextMenu = () => {
+    if (!selectedPath) {
+      return;
+    }
+
+    setContextMenuTarget(selectedPath);
+    setContextMenuPosition({ x: 0, y: 0 });
+    setContextMenuOpen(true);
+  };
+
+  // Handle context menu action result
+  const handleContextMenuAction = (actionType: string, result: { success: boolean; message: string }) => {
+    setNotification({
+      type: result.success ? 'success' : 'error',
+      message: result.message,
+    });
+  };
+
   // Execute command from command bar
   const handleCommandSubmit = async (input: string) => {
     // Close command bar
@@ -197,6 +265,9 @@ const App: React.FC<AppProps> = ({ cwd }) => {
   useKeyboard({
     onOpenCommandBar: handleOpenCommandBar,
     onClearFilter: handleClearFilter,
+    onOpenFile: handleOpenSelectedFile,
+    onCopyPath: handleCopySelectedPath,
+    onOpenContextMenu: handleOpenContextMenu,
   });
 
   if (loading) {
@@ -231,6 +302,16 @@ const App: React.FC<AppProps> = ({ cwd }) => {
         onSubmit={handleCommandSubmit}
         onCancel={handleCloseCommandBar}
       />
+      {contextMenuOpen && (
+        <ContextMenu
+          path={contextMenuTarget}
+          rootPath={cwd}
+          position={contextMenuPosition}
+          config={config}
+          onClose={() => setContextMenuOpen(false)}
+          onAction={handleContextMenuAction}
+        />
+      )}
     </Box>
   );
 };
