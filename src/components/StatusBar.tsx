@@ -64,7 +64,7 @@ export const StatusBar = forwardRef<StatusBarRef, StatusBarProps>(({
   const handleCopyTree = async () => {
     try {
       // 1. Set initial running state
-      setFeedback({ message: 'Running CopyTree...', type: 'success' });
+      setFeedback({ message: '📎 Running CopyTree...', type: 'success' });
       
       // 2. Execute command
       const output = await runCopyTree(activeRootPath);
@@ -77,7 +77,7 @@ export const StatusBar = forwardRef<StatusBarRef, StatusBarProps>(({
         .filter(line => line.length > 0);
 
       // 4. Get the last line or a fallback
-      let lastLine = lines.length > 0 ? lines[lines.length - 1] : 'Copied!';
+      let lastLine = lines.length > 0 ? lines[lines.length - 1] : '📎 Copied!';
 
       // 5. CRITICAL: Strip ANSI codes (colors, cursor moves) that break Ink layouts
       // This regex matches standard ANSI escape sequences
@@ -188,14 +188,19 @@ export const StatusBar = forwardRef<StatusBarRef, StatusBarProps>(({
     >
       {feedback ? (
         // FEEDBACK MODE
-        // We explicitly set height={2} to match the stats mode height exactly.
-        // We use justifyContent="center" to vertically align the single line of text.
-        <Box height={2} justifyContent="center" width="100%">
+        // We use height={3} to provide 1 line of padding above and below the text.
+        // Total height = 1 (top border) + 3 (content) + 1 (bottom border) = 5 lines.
+        <Box 
+          height={3} 
+          width="100%" 
+          flexDirection="column" 
+          justifyContent="center"
+        >
            <Text 
              color={feedback.type === 'success' ? 'green' : 'red'}
              wrap="truncate-end"
            >
-            {feedback.type === 'success' ? '📎 ' : '❌ '}
+            {feedback.type === 'success' ? '' : '❌ '}
             {feedback.message}
           </Text>
         </Box>
