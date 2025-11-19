@@ -4,15 +4,23 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { useAppLifecycle } from '../../src/hooks/useAppLifecycle.js';
 import * as config from '../../src/utils/config.js';
 import * as worktree from '../../src/utils/worktree.js';
+import * as state from '../../src/utils/state.js';
 import { DEFAULT_CONFIG } from '../../src/types/index.js';
 
 // Mock modules
 vi.mock('../../src/utils/config.js');
 vi.mock('../../src/utils/worktree.js');
+vi.mock('../../src/utils/state.js');
 
 describe('useAppLifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default mock for loadInitialState - returns minimal state
+    vi.mocked(state.loadInitialState).mockResolvedValue({
+      worktree: null,
+      selectedPath: null,
+      expandedFolders: new Set<string>(),
+    });
   });
 
   afterEach(() => {
@@ -112,6 +120,12 @@ describe('useAppLifecycle', () => {
     vi.mocked(config.loadConfig).mockResolvedValue(DEFAULT_CONFIG);
     vi.mocked(worktree.getWorktrees).mockResolvedValue(mockWorktrees);
     vi.mocked(worktree.getCurrentWorktree).mockReturnValue(mockWorktrees[0]);
+    // Mock loadInitialState to return current worktree
+    vi.mocked(state.loadInitialState).mockResolvedValue({
+      worktree: mockWorktrees[0],
+      selectedPath: null,
+      expandedFolders: new Set<string>(),
+    });
 
     const { result } = renderHook(() =>
       useAppLifecycle({ cwd: '/repo/main', noWatch: true, noGit: true })
@@ -135,6 +149,12 @@ describe('useAppLifecycle', () => {
     vi.mocked(config.loadConfig).mockResolvedValue(DEFAULT_CONFIG);
     vi.mocked(worktree.getWorktrees).mockResolvedValue(mockWorktrees);
     vi.mocked(worktree.getCurrentWorktree).mockReturnValue(null);
+    // Mock loadInitialState to return first worktree
+    vi.mocked(state.loadInitialState).mockResolvedValue({
+      worktree: mockWorktrees[0],
+      selectedPath: null,
+      expandedFolders: new Set<string>(),
+    });
 
     const { result } = renderHook(() =>
       useAppLifecycle({ cwd: '/some/other/path', noWatch: true, noGit: true })
@@ -150,9 +170,8 @@ describe('useAppLifecycle', () => {
 
   it('handles catastrophic initialization errors', async () => {
     vi.mocked(config.loadConfig).mockRejectedValue(new Error('Disk failure'));
-    vi.mocked(worktree.getWorktrees).mockImplementation(() => {
-      throw new Error('Catastrophic error');
-    });
+    // Mock loadInitialState to throw a catastrophic error
+    vi.mocked(state.loadInitialState).mockRejectedValue(new Error('Catastrophic error'));
 
     const { result } = renderHook(() =>
       useAppLifecycle({ cwd: '/test', noWatch: true, noGit: true })

@@ -20,6 +20,7 @@ import path from 'path';
 import { useGitStatus } from './hooks/useGitStatus.js';
 import { createFileWatcher, buildIgnorePatterns } from './utils/fileWatcher.js';
 import type { FileWatcher } from './utils/fileWatcher.js';
+import { saveSessionState } from './utils/state.js';
 
 interface AppProps {
   cwd: string;
@@ -37,6 +38,8 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     worktrees,
     activeWorktreeId: initialActiveWorktreeId,
     activeRootPath: initialActiveRootPath,
+    initialSelectedPath,
+    initialExpandedFolders,
     error: lifecycleError,
     notification: lifecycleNotification,
     setNotification: setLifecycleNotification,
@@ -106,6 +109,8 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     config,
     filterQuery: filterActive ? filterQuery : null,
     gitStatusMap: gitStatus,
+    initialSelectedPath,
+    initialExpandedFolders,
   });
 
   // Context menu state (from PR #73)
@@ -113,7 +118,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   const [contextMenuTarget, setContextMenuTarget] = useState<string>('');
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Cleanup watcher on unmount
+  // Cleanup watcher on unmount and save session state
   useEffect(() => {
     return () => {
       if (watcherRef.current) {
@@ -121,8 +126,19 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
           console.error('Error stopping watcher on unmount:', err);
         });
       }
+
+      // Save session state on unmount
+      if (activeWorktreeId && selectedPath) {
+        void saveSessionState(activeWorktreeId, {
+          selectedPath,
+          expandedFolders: Array.from(expandedFolders),
+          timestamp: Date.now(),
+        }).catch((err) => {
+          console.error('Error saving session state:', err);
+        });
+      }
     };
-  }, []);
+  }, [activeWorktreeId, selectedPath, expandedFolders]);
 
   // Auto-dismiss notifications after 3 seconds
   useEffect(() => {
@@ -269,6 +285,15 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   // Handle worktree switching
   const handleSwitchWorktree = async (targetWorktree: Worktree) => {
     try {
+      // Save current session state before switching
+      if (activeWorktreeId && selectedPath) {
+        await saveSessionState(activeWorktreeId, {
+          selectedPath,
+          expandedFolders: Array.from(expandedFolders),
+          timestamp: Date.now(),
+        });
+      }
+
       // Clear git status before switching
       clearGitStatus();
 
