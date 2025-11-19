@@ -1,6 +1,7 @@
 import React from 'react';
-import { Box, Text } from 'ink';
 import type { TreeNode as TreeNodeType, YellowwoodConfig, GitStatus } from '../types/index.js';
+import { FolderNode } from './FolderNode.js';
+import { FileNode } from './FileNode.js';
 
 interface TreeNodeProps {
   node: TreeNodeType;
@@ -61,7 +62,8 @@ function getNodeColor(
 }
 
 /**
- * TreeNode component - renders a single tree node with icon, name, git marker, and children
+ * TreeNode component - delegates rendering to FolderNode or FileNode based on node type.
+ * Maintains shared helper functions and recursion logic.
  */
 export function TreeNode({
   node,
@@ -71,54 +73,40 @@ export function TreeNode({
   onToggle,
   config,
 }: TreeNodeProps): React.JSX.Element {
-  // Calculate indentation based on depth
-  const indent = ' '.repeat(node.depth * config.treeIndent);
+  // Helper to recursively render child nodes
+  const renderChild = (child: TreeNodeType): React.JSX.Element => (
+    <TreeNode
+      key={child.path}
+      node={child}
+      selected={child.path === selectedPath}
+      selectedPath={selectedPath}
+      onSelect={onSelect}
+      onToggle={onToggle}
+      config={config}
+    />
+  );
 
-  // Select icon based on type and expansion state
-  let icon: string;
+  // Delegate to FolderNode or FileNode based on type
   if (node.type === 'directory') {
-    icon = node.expanded ? '\u25BC' : '\u25B6'; // ▼ : ▶
-  } else {
-    icon = '-';
+    return (
+      <FolderNode
+        node={node}
+        selected={selected}
+        config={config}
+        mapGitStatusMarker={mapGitStatusMarker}
+        getNodeColor={getNodeColor}
+        renderChild={renderChild}
+      />
+    );
   }
 
-  // Get git status marker
-  const gitMarker =
-    config.showGitStatus && node.gitStatus
-      ? ` ${mapGitStatusMarker(node.gitStatus)}`
-      : '';
-
-  // Get color
-  const color = getNodeColor(node, selected, config.showGitStatus);
-
-  // Determine if text should be dimmed (for deleted files, but never dim selected items)
-  const dimmed = !selected && node.gitStatus === 'deleted';
-
   return (
-    <Box flexDirection="column">
-      {/* Current node row */}
-      <Box>
-        <Text color={color} dimColor={dimmed} bold={selected}>
-          {indent}{icon} {node.name}{gitMarker}
-        </Text>
-      </Box>
-
-      {/* Recursively render children if expanded */}
-      {node.expanded && node.children && node.children.length > 0 && (
-        <>
-          {node.children.map((child) => (
-            <TreeNode
-              key={child.path}
-              node={child}
-              selected={child.path === selectedPath}
-              selectedPath={selectedPath}
-              onSelect={onSelect}
-              onToggle={onToggle}
-              config={config}
-            />
-          ))}
-        </>
-      )}
-    </Box>
+    <FileNode
+      node={node}
+      selected={selected}
+      config={config}
+      mapGitStatusMarker={mapGitStatusMarker}
+      getNodeColor={getNodeColor}
+    />
   );
 }
