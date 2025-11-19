@@ -36,7 +36,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   }
 
   // Build status sections
-  const sections: JSX.Element[] = [];
+  const sections: React.JSX.Element[] = [];
 
   // Section 1: File statistics
   sections.push(
