@@ -13,6 +13,7 @@ export interface UseFileTreeOptions {
 
 export interface UseFileTreeResult {
   tree: TreeNode[];
+  rawTree: TreeNode[]; // Unfiltered tree (for commands)
   expandedFolders: Set<string>;
   selectedPath: string | null;
   loading: boolean;
@@ -54,6 +55,10 @@ export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
 
     async function loadTree() {
       setLoading(true);
+      // Clear selection and expansion when rootPath changes (worktree switch)
+      setSelectedPath(null);
+      setExpandedFolders(new Set());
+
       try {
         const newTree = await buildFileTree(rootPath, config);
         if (!cancelled) {
@@ -193,6 +198,7 @@ export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
 
   return {
     tree: filteredTree,
+    rawTree: treeWithGitStatus, // Unfiltered but with git status
     expandedFolders,
     selectedPath,
     loading,
