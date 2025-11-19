@@ -46,7 +46,7 @@ describe('useGitStatus', () => {
 	it('loads git status on mount for git repository', async () => {
 		// Mock: is a git repo with one modified file
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(
 			new Map([['src/App.tsx', 'modified']])
 		);
 
@@ -64,7 +64,7 @@ describe('useGitStatus', () => {
 	it('handles non-git directory gracefully', async () => {
 		// Mock: not a git repo
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(false);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { result } = renderHook(() => useGitStatus(nonRepoPath, true));
 
@@ -82,7 +82,7 @@ describe('useGitStatus', () => {
 		await new Promise(resolve => setTimeout(resolve, 50));
 
 		expect(gitUtils.isGitRepository).not.toHaveBeenCalled();
-		expect(gitUtils.getGitStatus).not.toHaveBeenCalled();
+		expect(gitUtils.getGitStatusCached).not.toHaveBeenCalled();
 		expect(result.current.gitEnabled).toBe(false);
 		expect(result.current.gitStatus.size).toBe(0);
 	});
@@ -90,7 +90,7 @@ describe('useGitStatus', () => {
 	it('refresh() updates git status', async () => {
 		// Initial state: one modified file
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(
 			new Map([['file1.txt', 'modified']])
 		);
 
@@ -101,7 +101,7 @@ describe('useGitStatus', () => {
 		});
 
 		// Mock updated status: two files
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(
 			new Map([
 				['file1.txt', 'modified'],
 				['file2.txt', 'added'],
@@ -121,7 +121,7 @@ describe('useGitStatus', () => {
 
 	it('debounces rapid refresh calls', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { result } = renderHook(() => useGitStatus(testRepoPath, true));
 
@@ -141,16 +141,16 @@ describe('useGitStatus', () => {
 
 		// Wait for debounce to complete
 		await waitFor(() => {
-			expect(gitUtils.getGitStatus).toHaveBeenCalled();
+			expect(gitUtils.getGitStatusCached).toHaveBeenCalled();
 		}, { timeout: 500 });
 
-		// Should only call getGitStatus ONCE (debounced)
-		expect(gitUtils.getGitStatus).toHaveBeenCalledTimes(1);
+		// Should only call getGitStatusCached ONCE (debounced)
+		expect(gitUtils.getGitStatusCached).toHaveBeenCalledTimes(1);
 	});
 
 	it('respects custom debounce time', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { result } = renderHook(() =>
 			useGitStatus(testRepoPath, true, 500) // 500ms debounce
@@ -169,20 +169,20 @@ describe('useGitStatus', () => {
 
 		// Wait 250ms - should NOT have called yet (debounce is 500ms)
 		await new Promise(resolve => setTimeout(resolve, 250));
-		expect(gitUtils.getGitStatus).not.toHaveBeenCalled();
+		expect(gitUtils.getGitStatusCached).not.toHaveBeenCalled();
 
 		// Wait another 350ms (600ms total) - should have called by now
 		await waitFor(() => {
-			expect(gitUtils.getGitStatus).toHaveBeenCalled();
+			expect(gitUtils.getGitStatusCached).toHaveBeenCalled();
 		}, { timeout: 500 });
 
 		// Should have been called exactly once
-		expect(gitUtils.getGitStatus).toHaveBeenCalledTimes(1);
+		expect(gitUtils.getGitStatusCached).toHaveBeenCalledTimes(1);
 	});
 
 	it('clears debounce timer on unmount', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { result, unmount } = renderHook(() => useGitStatus(testRepoPath, true));
 
@@ -202,12 +202,12 @@ describe('useGitStatus', () => {
 		await new Promise(resolve => setTimeout(resolve, 200));
 
 		// Timer should be cleared - no call even after time passes
-		expect(gitUtils.getGitStatus).not.toHaveBeenCalled();
+		expect(gitUtils.getGitStatusCached).not.toHaveBeenCalled();
 	});
 
 	it('updates when cwd changes', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { result, rerender } = renderHook(
 			({ cwd }) => useGitStatus(cwd, true),
@@ -230,7 +230,7 @@ describe('useGitStatus', () => {
 
 	it('clears state when disabled mid-session', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(
 			new Map([['file.txt', 'modified']])
 		);
 
@@ -253,9 +253,9 @@ describe('useGitStatus', () => {
 	});
 
 	it('handles git command errors gracefully', async () => {
-		// Mock: isGitRepository succeeds but getGitStatus fails
+		// Mock: isGitRepository succeeds but getGitStatusCached fails
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockRejectedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockRejectedValue(
 			new Error('Git command failed')
 		);
 
@@ -287,7 +287,7 @@ describe('useGitStatus', () => {
 
 	it('handles multiple status types correctly', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(
 			new Map([
 				['modified.ts', 'modified'],
 				['added.ts', 'added'],
@@ -310,7 +310,7 @@ describe('useGitStatus', () => {
 
 	it('preserves refresh function reference across renders', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { result, rerender } = renderHook(() => useGitStatus(testRepoPath, true));
 
@@ -329,7 +329,7 @@ describe('useGitStatus', () => {
 
 	it('handles rapid cwd changes correctly', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { rerender } = renderHook(
 			({ cwd }) => useGitStatus(cwd, true),
@@ -349,7 +349,7 @@ describe('useGitStatus', () => {
 
 	it('cancels pending refresh when cwd changes', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { result, rerender } = renderHook(
 			({ cwd }) => useGitStatus(cwd, true),
@@ -377,7 +377,7 @@ describe('useGitStatus', () => {
 
 	it('handles empty git status correctly', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { result } = renderHook(() => useGitStatus(testRepoPath, true));
 
@@ -399,7 +399,7 @@ describe('useGitStatus', () => {
 	it('clear() empties git status map immediately', async () => {
 		// Set up repo with modified files
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(
 			new Map([
 				['file1.txt', 'modified'],
 				['file2.txt', 'added'],
@@ -427,7 +427,7 @@ describe('useGitStatus', () => {
 
 	it('clear() cancels pending refresh', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { result } = renderHook(() => useGitStatus(testRepoPath, true));
 
@@ -450,14 +450,14 @@ describe('useGitStatus', () => {
 		// Wait longer than debounce time
 		await new Promise(resolve => setTimeout(resolve, 200));
 
-		// Refresh should have been canceled - no call to getGitStatus
-		expect(gitUtils.getGitStatus).not.toHaveBeenCalled();
+		// Refresh should have been canceled - no call to getGitStatusCached
+		expect(gitUtils.getGitStatusCached).not.toHaveBeenCalled();
 	});
 
 	it('clear() invalidates in-flight requests', async () => {
 		// Mock slow git status fetch
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockImplementation(async () => {
+		vi.mocked(gitUtils.getGitStatusCached).mockImplementation(async () => {
 			await new Promise(resolve => setTimeout(resolve, 100));
 			return new Map([['file.txt', 'modified']]);
 		});
@@ -482,7 +482,7 @@ describe('useGitStatus', () => {
 
 	it('clears status immediately when cwd changes', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(
 			new Map([['file1.txt', 'modified']])
 		);
 
@@ -497,7 +497,7 @@ describe('useGitStatus', () => {
 		});
 
 		// Mock new status for new cwd
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(
 			new Map([['file2.txt', 'added']])
 		);
 
@@ -518,7 +518,7 @@ describe('useGitStatus', () => {
 
 	it('preserves clear function reference across renders', async () => {
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(new Map());
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(new Map());
 
 		const { result, rerender } = renderHook(() => useGitStatus(testRepoPath, true));
 
@@ -538,7 +538,7 @@ describe('useGitStatus', () => {
 	it('allows refresh after clear when enabled remains true', async () => {
 		// Initial state: one modified file
 		vi.mocked(gitUtils.isGitRepository).mockResolvedValue(true);
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(
 			new Map([['file1.txt', 'modified']])
 		);
 
@@ -559,7 +559,7 @@ describe('useGitStatus', () => {
 		expect(result.current.gitEnabled).toBe(false);
 
 		// Mock new status for refresh
-		vi.mocked(gitUtils.getGitStatus).mockResolvedValue(
+		vi.mocked(gitUtils.getGitStatusCached).mockResolvedValue(
 			new Map([
 				['file1.txt', 'modified'],
 				['file2.txt', 'added'],
