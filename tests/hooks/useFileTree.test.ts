@@ -470,7 +470,7 @@ describe('useFileTree', () => {
 
     // Should return unfiltered tree on filter error
     expect(result.current.tree).toEqual(mockTree);
-    expect(consoleSpy).toHaveBeenCalledWith('Filter error:', expect.any(Error));
+    expect(consoleSpy).toHaveBeenCalledWith('Name filter error:', expect.any(Error));
 
     consoleSpy.mockRestore();
   });

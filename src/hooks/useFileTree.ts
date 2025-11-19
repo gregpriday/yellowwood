@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { TreeNode, YellowwoodConfig, GitStatus } from '../types/index.js';
 import { buildFileTree } from '../utils/fileTree.js';
-import { filterTreeByName } from '../utils/filter.js';
+import { filterTreeByName, filterTreeByGitStatus } from '../utils/filter.js';
 
 export interface UseFileTreeOptions {
   rootPath: string;
   config: YellowwoodConfig;
   filterQuery?: string | null;
   gitStatusMap?: Map<string, GitStatus>;
+  gitStatusFilter?: GitStatus | GitStatus[] | null;
 }
 
 export interface UseFileTreeResult {
@@ -36,7 +37,7 @@ export interface UseFileTreeResult {
  * @returns Tree state and actions
  */
 export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
-  const { rootPath, config, filterQuery, gitStatusMap } = options;
+  const { rootPath, config, filterQuery, gitStatusMap, gitStatusFilter } = options;
 
   // State
   const [tree, setTree] = useState<TreeNode[]>([]);
@@ -79,7 +80,7 @@ export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
   // Apply git status to tree nodes when gitStatusMap changes
   // Convert Map to stable array for dependency tracking (Map reference doesn't change when mutated)
   const gitStatusSignature = useMemo(
-    () => (gitStatusMap ? Array.from(gitStatusMap.entries()) : []),
+    () => (gitStatusMap ? Array.from(gitStatusMap.entries()).sort((a, b) => a[0].localeCompare(b[0])) : []),
     [gitStatusMap]
   );
 
@@ -102,21 +103,34 @@ export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
     }
 
     return attachGitStatus(tree);
-  }, [tree, gitStatusSignature]);
+  }, [tree, gitStatusMap, gitStatusSignature]);
 
-  // Apply filter to tree when filterQuery changes
+  // Apply filters to tree (git status filter first, then name filter)
   const filteredTree = useMemo(() => {
-    if (!filterQuery) {
-      return treeWithGitStatus;
+    let result = treeWithGitStatus;
+
+    // Apply git status filter first
+    if (gitStatusFilter) {
+      try {
+        result = filterTreeByGitStatus(result, gitStatusFilter);
+      } catch (error) {
+        console.warn('Git status filter error:', error);
+        result = treeWithGitStatus; // Return unfiltered on error
+      }
     }
 
-    try {
-      return filterTreeByName(treeWithGitStatus, filterQuery);
-    } catch (error) {
-      console.warn('Filter error:', error);
-      return treeWithGitStatus; // Return unfiltered on error
+    // Apply name filter second
+    if (filterQuery) {
+      try {
+        result = filterTreeByName(result, filterQuery);
+      } catch (error) {
+        console.warn('Name filter error:', error);
+        // If name filter fails, return git-filtered tree (don't apply name filter)
+      }
     }
-  }, [treeWithGitStatus, filterQuery]);
+
+    return result;
+  }, [treeWithGitStatus, filterQuery, gitStatusFilter]);
 
   // Expansion actions
   const expandFolder = useCallback((path: string) => {
