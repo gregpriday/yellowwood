@@ -1,6 +1,43 @@
 import fs from 'fs-extra';
 import path from 'path';
 import type { TreeNode, YellowwoodConfig } from '../types/index.js';
+import { Cache } from './cache.js';
+import { perfMonitor } from './perfMetrics.js';
+
+// Directory listing cache configuration
+const DIR_LISTING_CACHE = new Cache<string, fs.Dirent[]>({
+	maxSize: 500, // Cache up to 500 directories
+	defaultTTL: 10000, // 10 second TTL (longer than git status)
+});
+
+// Periodically clean up expired entries
+const dirCacheCleanupInterval = setInterval(
+	() => DIR_LISTING_CACHE.cleanup(),
+	15000,
+); // Every 15 seconds
+
+// Allow cleanup to be stopped (for testing)
+export function stopDirCacheCleanup(): void {
+	clearInterval(dirCacheCleanupInterval);
+}
+
+/**
+ * Invalidate directory listing cache for a path.
+ * Call when files are added/removed/renamed in this directory.
+ *
+ * @param dirPath - Directory to invalidate
+ */
+export function invalidateDirCache(dirPath: string): void {
+	DIR_LISTING_CACHE.invalidate(dirPath);
+}
+
+/**
+ * Clear all directory listing caches.
+ * Useful when switching worktrees.
+ */
+export function clearDirCache(): void {
+	DIR_LISTING_CACHE.clear();
+}
 
 /**
  * Build a file tree from the filesystem starting at rootPath.
@@ -8,11 +45,13 @@ import type { TreeNode, YellowwoodConfig } from '../types/index.js';
  *
  * @param rootPath - Absolute path to the root directory to scan
  * @param config - Yellowwood configuration for filtering and sorting
+ * @param forceRefresh - Skip cache and force fresh directory reads
  * @returns Array of TreeNode objects representing the directory structure
  */
 export async function buildFileTree(
-  rootPath: string,
-  config: YellowwoodConfig
+	rootPath: string,
+	config: YellowwoodConfig,
+	forceRefresh = false,
 ): Promise<TreeNode[]> {
   // Validate root path
   try {
@@ -31,9 +70,46 @@ export async function buildFileTree(
     : [];
 
   // Build tree recursively
-  const nodes = await buildTreeRecursive(rootPath, config, 0, gitignorePatterns, rootPath);
+  const nodes = await buildTreeRecursive(
+		rootPath,
+		config,
+		0,
+		gitignorePatterns,
+		rootPath,
+		forceRefresh,
+	);
 
   return sortNodes(nodes, config);
+}
+
+/**
+ * Get cached directory listing or read from filesystem.
+ * Internal helper for directory caching.
+ */
+async function getCachedDirListing(
+	dirPath: string,
+	forceRefresh: boolean,
+): Promise<fs.Dirent[]> {
+	// Check cache first (unless forced refresh)
+	if (!forceRefresh) {
+		const cached = DIR_LISTING_CACHE.get(dirPath);
+		if (cached) {
+			perfMonitor.recordMetric('dir-listing-cache-hit', 1);
+			return cached;
+		}
+	}
+
+	perfMonitor.recordMetric('dir-listing-cache-miss', 1);
+
+	// Cache miss or forced refresh - read directory
+	const entries = await perfMonitor.measure('dir-listing-read', async () =>
+		fs.readdir(dirPath, { withFileTypes: true }),
+	);
+
+	// Store in cache
+	DIR_LISTING_CACHE.set(dirPath, entries);
+
+	return entries;
 }
 
 /**
@@ -41,22 +117,23 @@ export async function buildFileTree(
  * Internal helper - not exported.
  */
 async function buildTreeRecursive(
-  dirPath: string,
-  config: YellowwoodConfig,
-  currentDepth: number,
-  gitignorePatterns: string[],
-  rootPath: string
+	dirPath: string,
+	config: YellowwoodConfig,
+	currentDepth: number,
+	gitignorePatterns: string[],
+	rootPath: string,
+	forceRefresh: boolean,
 ): Promise<TreeNode[]> {
-  const nodes: TreeNode[] = [];
+	const nodes: TreeNode[] = [];
 
-  let entries;
-  try {
-    entries = await fs.readdir(dirPath, { withFileTypes: true });
-  } catch (error) {
-    // Permission error or directory disappeared
-    console.warn(`Cannot read directory ${dirPath}:`, (error as Error).message);
-    return [];
-  }
+	let entries;
+	try {
+		entries = await getCachedDirListing(dirPath, forceRefresh);
+	} catch (error) {
+		// Permission error or directory disappeared
+		console.warn(`Cannot read directory ${dirPath}:`, (error as Error).message);
+		return [];
+	}
 
   for (const entry of entries) {
     const entryPath = path.join(dirPath, entry.name);
@@ -81,7 +158,8 @@ async function buildTreeRecursive(
             config,
             currentDepth + 1,
             gitignorePatterns,
-            rootPath
+            rootPath,
+            forceRefresh
           );
         } else {
           // At depth limit - no children

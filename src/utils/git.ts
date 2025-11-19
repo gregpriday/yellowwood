@@ -2,6 +2,8 @@ import { resolve } from 'path';
 import { realpathSync } from 'fs';
 import simpleGit, { SimpleGit, StatusResult } from 'simple-git';
 import type { GitStatus } from '../types/index.js';
+import { Cache } from './cache.js';
+import { perfMonitor } from './perfMetrics.js';
 
 /**
  * Check if a directory is inside a git repository.
@@ -98,4 +100,70 @@ export async function getGitStatus(cwd: string): Promise<Map<string, GitStatus>>
   }
 
   return statusMap;
+}
+
+// Git status cache configuration
+const GIT_STATUS_CACHE = new Cache<string, Map<string, GitStatus>>({
+	maxSize: 100, // Cache up to 100 different directories
+	defaultTTL: 5000, // 5 second TTL
+});
+
+// Periodically clean up expired entries
+const cleanupInterval = setInterval(() => GIT_STATUS_CACHE.cleanup(), 10000); // Every 10 seconds
+
+// Allow cleanup to be stopped (for testing)
+export function stopGitStatusCacheCleanup(): void {
+	clearInterval(cleanupInterval);
+}
+
+/**
+ * Get git status with caching.
+ * Results are cached for 5 seconds to reduce git command overhead.
+ *
+ * @param cwd - Working directory
+ * @param forceRefresh - Skip cache and force fresh git status
+ * @returns Map of file paths to git status
+ */
+export async function getGitStatusCached(
+	cwd: string,
+	forceRefresh = false,
+): Promise<Map<string, GitStatus>> {
+	// Check cache first (unless forced refresh)
+	if (!forceRefresh) {
+		const cached = GIT_STATUS_CACHE.get(cwd);
+		if (cached) {
+			perfMonitor.recordMetric('git-status-cache-hit', 1);
+			return cached;
+		}
+	}
+
+	perfMonitor.recordMetric('git-status-cache-miss', 1);
+
+	// Cache miss or forced refresh - call original function with metrics
+	const status = await perfMonitor.measure('git-status-fetch', () =>
+		getGitStatus(cwd),
+	);
+
+	// Store in cache
+	GIT_STATUS_CACHE.set(cwd, status);
+
+	return status;
+}
+
+/**
+ * Invalidate git status cache for a directory.
+ * Call this when you know git status has changed.
+ *
+ * @param cwd - Directory to invalidate
+ */
+export function invalidateGitStatusCache(cwd: string): void {
+	GIT_STATUS_CACHE.invalidate(cwd);
+}
+
+/**
+ * Clear all git status caches.
+ * Useful when switching worktrees.
+ */
+export function clearGitStatusCache(): void {
+	GIT_STATUS_CACHE.clear();
 }

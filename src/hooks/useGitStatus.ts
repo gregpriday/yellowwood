@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getGitStatus, isGitRepository } from '../utils/git.js';
+import {
+	getGitStatusCached,
+	isGitRepository,
+	invalidateGitStatusCache,
+} from '../utils/git.js';
 import type { GitStatus } from '../types/index.js';
+import { debounce } from '../utils/debounce.js';
 
 /**
  * Hook return value interface
@@ -11,7 +16,7 @@ export interface UseGitStatusReturn {
 	/** Whether the directory is a git repository */
 	gitEnabled: boolean;
 	/** Manually refresh git status (debounced) */
-	refresh: () => void;
+	refresh: (forceRefresh?: boolean) => void;
 	/** Clear git status immediately (for worktree switches) */
 	clear: () => void;
 }
@@ -54,89 +59,147 @@ export function useGitStatus(
 	const [gitStatus, setGitStatus] = useState<Map<string, GitStatus>>(new Map());
 	const [gitEnabled, setGitEnabled] = useState<boolean>(false);
 
-	// Ref to track pending debounce timer
-	const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-
 	// Ref to track if component is mounted (prevent setState after unmount)
 	const isMountedRef = useRef<boolean>(true);
 
 	// Ref to track latest request (ignore stale responses)
 	const requestIdRef = useRef<number>(0);
 
+	// Ref to track ongoing fetch promise to prevent concurrent fetches
+	const ongoingFetchRef = useRef<Promise<void> | null>(null);
+	// Ref to track pending forced refresh while a fetch is in-flight
+	const pendingForceRefreshRef = useRef<boolean>(false);
+
 	/**
 	 * Internal function to actually fetch and update git status.
-	 * Not debounced - called by the debounced refresh function.
+	 * Uses cached results when available.
 	 */
-	const fetchGitStatus = useCallback(async () => {
-		if (!enabled) {
-			// Git status disabled in config - clear state and invalidate in-flight requests
-			++requestIdRef.current; // Invalidate any pending requests
-			if (isMountedRef.current) {
-				setGitStatus(new Map());
-				setGitEnabled(false);
-			}
-			return;
-		}
-
-		// Increment request ID to track this fetch
-		const currentRequestId = ++requestIdRef.current;
-
-		try {
-			// Check if directory is a git repository
-			const isRepo = await isGitRepository(cwd);
-
-			// Only update state if this is still the latest request and component is mounted
-			if (currentRequestId !== requestIdRef.current || !isMountedRef.current) {
+	const fetchGitStatus = useCallback(
+		async (forceRefresh = false) => {
+			if (!enabled) {
+				// Git status disabled in config - clear state and invalidate in-flight requests
+				++requestIdRef.current; // Invalidate any pending requests
+				if (isMountedRef.current) {
+					setGitStatus(new Map());
+					setGitEnabled(false);
+				}
 				return;
 			}
 
-			setGitEnabled(isRepo);
+			// If there's an ongoing fetch, wait for it instead of starting a new one.
+			// Queue a forced refresh if requested so we rerun after the current fetch.
+			if (ongoingFetchRef.current) {
+				if (forceRefresh) {
+					pendingForceRefreshRef.current = true;
+				}
+				await ongoingFetchRef.current;
 
-			if (!isRepo) {
-				// Not a git repo - clear status
-				setGitStatus(new Map());
+				if (pendingForceRefreshRef.current) {
+					pendingForceRefreshRef.current = false;
+					// Force a follow-up refresh since we now know data changed
+					return fetchGitStatus(true);
+				}
+
 				return;
 			}
 
-			// Fetch git status
-			const status = await getGitStatus(cwd);
+			// Increment request ID to track this fetch
+			const currentRequestId = ++requestIdRef.current;
 
-			// Check again before updating state (async operation completed)
-			if (currentRequestId !== requestIdRef.current || !isMountedRef.current) {
-				return;
+			// Invalidate cache if force refresh requested
+			if (forceRefresh) {
+				invalidateGitStatusCache(cwd);
 			}
 
-			setGitStatus(status);
+			const fetchPromise = (async () => {
+				try {
+					// Check if directory is a git repository
+					const isRepo = await isGitRepository(cwd);
 
-		} catch (error) {
-			// Only update state if this is still the latest request and component is mounted
-			if (currentRequestId !== requestIdRef.current || !isMountedRef.current) {
-				return;
-			}
+					// Only update state if this is still the latest request and component is mounted
+					if (
+						currentRequestId !== requestIdRef.current ||
+						!isMountedRef.current
+					) {
+						return;
+					}
 
-			// Git command failed - log warning and disable
-			console.warn('Failed to fetch git status:', (error as Error).message);
-			setGitEnabled(false);
-			setGitStatus(new Map());
-		}
-	}, [cwd, enabled]);
+					setGitEnabled(isRepo);
+
+					if (!isRepo) {
+						// Not a git repo - clear status
+						setGitStatus(new Map());
+						return;
+					}
+
+					// Fetch git status with caching
+					const status = await getGitStatusCached(cwd, forceRefresh);
+
+					// Check again before updating state (async operation completed)
+					if (
+						currentRequestId !== requestIdRef.current ||
+						!isMountedRef.current
+					) {
+						return;
+					}
+
+					setGitStatus(status);
+				} catch (error) {
+					// Only update state if this is still the latest request and component is mounted
+					if (
+						currentRequestId !== requestIdRef.current ||
+						!isMountedRef.current
+					) {
+						return;
+					}
+
+					// Git command failed - log warning and disable
+					console.warn('Failed to fetch git status:', (error as Error).message);
+					setGitEnabled(false);
+					setGitStatus(new Map());
+				} finally {
+					ongoingFetchRef.current = null;
+				}
+			})();
+
+			ongoingFetchRef.current = fetchPromise;
+			await fetchPromise;
+		},
+		[cwd, enabled],
+	);
+
+	// Create debounced refresh function using the new utility
+	const debouncedFetch = useRef(
+		debounce(
+			(forceRefresh: boolean = false) => {
+				fetchGitStatus(forceRefresh);
+			},
+			debounceMs,
+			{ leading: false, trailing: true, maxWait: 2000 },
+		),
+	);
+
+	// Update debounce delay if it changes
+	useEffect(() => {
+		debouncedFetch.current = debounce(
+			(forceRefresh: boolean = false) => {
+				fetchGitStatus(forceRefresh);
+			},
+			debounceMs,
+			{ leading: false, trailing: true, maxWait: 2000 },
+		);
+	}, [debounceMs, fetchGitStatus]);
 
 	/**
 	 * Debounced refresh function exposed to callers.
 	 * Multiple rapid calls will be coalesced into a single fetch.
 	 */
-	const refresh = useCallback(() => {
-		// Clear any pending timer
-		if (debounceTimerRef.current) {
-			clearTimeout(debounceTimerRef.current);
-		}
-
-		// Set new timer
-		debounceTimerRef.current = setTimeout(() => {
-			fetchGitStatus();
-			debounceTimerRef.current = null;
-		}, debounceMs);
-	}, [fetchGitStatus, debounceMs]);
+	const refresh = useCallback(
+		(forceRefresh = true) => {
+			debouncedFetch.current(forceRefresh);
+		},
+		[],
+	);
 
 	/**
 	 * Clear git status immediately (synchronous).
@@ -147,16 +210,17 @@ export function useGitStatus(
 		// Invalidate any pending requests
 		++requestIdRef.current;
 
-		// Clear any pending debounce timer
-		if (debounceTimerRef.current) {
-			clearTimeout(debounceTimerRef.current);
-			debounceTimerRef.current = null;
-		}
+		// Cancel any pending debounced calls
+		debouncedFetch.current.cancel();
+		pendingForceRefreshRef.current = false;
+
+		// Invalidate cache for this directory
+		invalidateGitStatusCache(cwd);
 
 		// Immediately clear state
 		setGitStatus(new Map());
 		setGitEnabled(false);
-	}, []);
+	}, [cwd]);
 
 	/**
 	 * Load initial git status on mount and when cwd/enabled changes.
@@ -170,16 +234,12 @@ export function useGitStatus(
 		clear();
 
 		// Immediate fetch (no debounce for initial load)
-		fetchGitStatus();
+		fetchGitStatus(true); // Force refresh on mount
 
-		// Cleanup: clear any pending debounce timer and mark as unmounted
+		// Cleanup: cancel pending debounce and mark as unmounted
 		return () => {
 			isMountedRef.current = false;
-
-			if (debounceTimerRef.current) {
-				clearTimeout(debounceTimerRef.current);
-				debounceTimerRef.current = null;
-			}
+			debouncedFetch.current.cancel();
 		};
 	}, [fetchGitStatus, clear]);
 

@@ -1,9 +1,22 @@
 import chokidar, { FSWatcher, ChokidarOptions } from 'chokidar';
 import path from 'path';
+import { debounce } from './debounce.js';
+import { perfMonitor } from './perfMetrics.js';
+
+export type FileChangeType = 'add' | 'change' | 'unlink' | 'unlinkDir' | 'addDir';
+
+export interface FileChangeEvent {
+	type: FileChangeType;
+	path: string;
+	timestamp: number;
+}
 
 export interface FileWatcherOptions {
 	ignored?: ChokidarOptions['ignored']; // Patterns to ignore (supports string, RegExp, function, etc.)
 	debounce?: number; // Debounce time in ms (default 100)
+	batchWindow?: number; // Time window to collect events for batching (default 50ms)
+	onBatch?: (events: FileChangeEvent[]) => void; // Batched event handler
+	// Legacy individual handlers (deprecated in favor of onBatch)
 	onAdd?: (path: string) => void;
 	onChange?: (path: string) => void;
 	onUnlink?: (path: string) => void;
@@ -19,37 +32,19 @@ export interface FileWatcher {
 }
 
 /**
- * Create a debounced function that delays execution until after a specified time.
- * Subsequent calls reset the delay timer.
- *
- * @param fn - Function to debounce
- * @param delay - Delay in milliseconds
- * @returns Debounced function with cleanup
+ * Deduplicate file change events.
+ * Keeps only the most recent event for each path+type combination.
  */
-function debounce<T extends (...args: any[]) => void>(
-	fn: T,
-	delay: number,
-): T & { cancel: () => void } {
-	let timeoutId: NodeJS.Timeout | null = null;
+function deduplicateEvents(events: FileChangeEvent[]): FileChangeEvent[] {
+	const seen = new Map<string, FileChangeEvent>();
 
-	const debounced = ((...args: any[]) => {
-		if (timeoutId !== null) {
-			clearTimeout(timeoutId);
-		}
-		timeoutId = setTimeout(() => {
-			timeoutId = null;
-			fn(...args);
-		}, delay);
-	}) as T & { cancel: () => void };
+	for (const event of events) {
+		const key = `${event.path}:${event.type}`;
+		// Keep only the most recent event for each path+type
+		seen.set(key, event);
+	}
 
-	debounced.cancel = () => {
-		if (timeoutId !== null) {
-			clearTimeout(timeoutId);
-			timeoutId = null;
-		}
-	};
-
-	return debounced;
+	return Array.from(seen.values());
 }
 
 /**
@@ -78,6 +73,8 @@ export function createFileWatcher(
 	const {
 		ignored = [],
 		debounce: debounceMs = 100,
+		batchWindow = 50,
+		onBatch,
 		onAdd,
 		onChange,
 		onUnlink,
@@ -89,13 +86,87 @@ export function createFileWatcher(
 	let watcher: FSWatcher | null = null;
 	let isActive = false;
 
-	// Create debounced versions of event handlers
-	const debouncedHandlers = {
-		add: onAdd ? debounce(onAdd, debounceMs) : null,
-		change: onChange ? debounce(onChange, debounceMs) : null,
-		unlink: onUnlink ? debounce(onUnlink, debounceMs) : null,
-		unlinkDir: onUnlinkDir ? debounce(onUnlinkDir, debounceMs) : null,
-		addDir: onAddDir ? debounce(onAddDir, debounceMs) : null,
+	// Batching state
+	const pendingEvents: FileChangeEvent[] = [];
+	let batchTimer: NodeJS.Timeout | null = null;
+
+	/**
+	 * Process accumulated batch of events.
+	 * Deduplicates events and invokes the batch handler with debouncing.
+	 */
+	const processBatch = () => {
+		if (pendingEvents.length === 0) {
+			return;
+		}
+
+		// Record batch size metric
+		perfMonitor.recordMetric('watcher-batch-size', pendingEvents.length);
+
+		// Deduplicate events
+		const uniqueEvents = deduplicateEvents(pendingEvents);
+		perfMonitor.recordMetric(
+			'watcher-unique-events',
+			uniqueEvents.length,
+		);
+
+		// Clear pending events
+		pendingEvents.length = 0;
+		batchTimer = null;
+
+		// Invoke batch handler
+		if (onBatch) {
+			onBatch(uniqueEvents);
+		}
+
+		// Also invoke legacy individual handlers for backward compatibility
+		for (const event of uniqueEvents) {
+			switch (event.type) {
+				case 'add':
+					onAdd?.(event.path);
+					break;
+				case 'change':
+					onChange?.(event.path);
+					break;
+				case 'unlink':
+					onUnlink?.(event.path);
+					break;
+				case 'unlinkDir':
+					onUnlinkDir?.(event.path);
+					break;
+				case 'addDir':
+					onAddDir?.(event.path);
+					break;
+			}
+		}
+	};
+
+	// Debounced batch processor
+	const debouncedProcessBatch = debounce(processBatch, debounceMs, {
+		leading: false,
+		trailing: true,
+		maxWait: 1000, // Force processing after 1 second even during continuous changes
+	});
+
+	/**
+	 * Add an event to the batch queue.
+	 * Events are collected for batchWindow ms before being processed.
+	 */
+	const queueEvent = (type: FileChangeType, relativePath: string) => {
+		pendingEvents.push({
+			type,
+			path: relativePath,
+			timestamp: Date.now(),
+		});
+
+		// Clear existing batch timer
+		if (batchTimer) {
+			clearTimeout(batchTimer);
+		}
+
+		// Set new batch timer
+		batchTimer = setTimeout(() => {
+			debouncedProcessBatch();
+		}, batchWindow);
 	};
 
 	const start = (): void => {
@@ -133,41 +204,31 @@ export function createFileWatcher(
 			// Create the watcher
 			watcher = chokidar.watch(rootPath, chokidarOptions);
 
-			// Register event handlers
-			if (debouncedHandlers.add) {
-				watcher.on('add', (filePath: string) => {
-					const relativePath = normalizePath(path.relative(rootPath, filePath));
-					debouncedHandlers.add!(relativePath);
-				});
-			}
+			// Register event handlers with batching
+			watcher.on('add', (filePath: string) => {
+				const relativePath = normalizePath(path.relative(rootPath, filePath));
+				queueEvent('add', relativePath);
+			});
 
-			if (debouncedHandlers.change) {
-				watcher.on('change', (filePath: string) => {
-					const relativePath = normalizePath(path.relative(rootPath, filePath));
-					debouncedHandlers.change!(relativePath);
-				});
-			}
+			watcher.on('change', (filePath: string) => {
+				const relativePath = normalizePath(path.relative(rootPath, filePath));
+				queueEvent('change', relativePath);
+			});
 
-			if (debouncedHandlers.unlink) {
-				watcher.on('unlink', (filePath: string) => {
-					const relativePath = normalizePath(path.relative(rootPath, filePath));
-					debouncedHandlers.unlink!(relativePath);
-				});
-			}
+			watcher.on('unlink', (filePath: string) => {
+				const relativePath = normalizePath(path.relative(rootPath, filePath));
+				queueEvent('unlink', relativePath);
+			});
 
-			if (debouncedHandlers.unlinkDir) {
-				watcher.on('unlinkDir', (dirPath: string) => {
-					const relativePath = normalizePath(path.relative(rootPath, dirPath));
-					debouncedHandlers.unlinkDir!(relativePath);
-				});
-			}
+			watcher.on('unlinkDir', (dirPath: string) => {
+				const relativePath = normalizePath(path.relative(rootPath, dirPath));
+				queueEvent('unlinkDir', relativePath);
+			});
 
-			if (debouncedHandlers.addDir) {
-				watcher.on('addDir', (dirPath: string) => {
-					const relativePath = normalizePath(path.relative(rootPath, dirPath));
-					debouncedHandlers.addDir!(relativePath);
-				});
-			}
+			watcher.on('addDir', (dirPath: string) => {
+				const relativePath = normalizePath(path.relative(rootPath, dirPath));
+				queueEvent('addDir', relativePath);
+			});
 
 			// Error handler
 			watcher.on('error', (error: unknown) => {
@@ -213,12 +274,17 @@ export function createFileWatcher(
 			return;
 		}
 
-		// Cancel any pending debounced calls
-		Object.values(debouncedHandlers).forEach((handler) => {
-			if (handler) {
-				handler.cancel();
-			}
-		});
+		// Cancel any pending batch timer
+		if (batchTimer) {
+			clearTimeout(batchTimer);
+			batchTimer = null;
+		}
+
+		// Cancel debounced batch processor
+		debouncedProcessBatch.cancel();
+
+		// Clear pending events
+		pendingEvents.length = 0;
 
 		// Close the watcher
 		try {
