@@ -441,4 +441,316 @@ describe('TreeView virtualization', () => {
       expect(newLines).toBeLessThanOrEqual(initialLines);
     });
   });
+
+  describe('left/right arrow navigation', () => {
+    it('collapses expanded folder with left arrow', () => {
+      Object.defineProperty(process.stdout, 'rows', { value: 30, writable: true, configurable: true });
+
+      const expandedPaths = new Set(['/root/folder1']);
+      const onToggleExpand = vi.fn();
+
+      const tree: TreeNode[] = [
+        {
+          name: 'folder1',
+          path: '/root/folder1',
+          type: 'directory',
+          depth: 0,
+          expanded: true,
+          children: [
+            { name: 'file1.txt', path: '/root/folder1/file1.txt', type: 'file', depth: 1 },
+          ],
+        },
+      ];
+
+      const { stdin } = render(
+        <TreeView
+          fileTree={tree}
+          selectedPath="/root/folder1"
+          onSelect={vi.fn()}
+          onToggleExpand={onToggleExpand}
+          expandedPaths={expandedPaths}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      // Press left arrow on expanded folder
+      stdin.write('\x1B[D');
+
+      // Should toggle (collapse) the folder
+      expect(onToggleExpand).toHaveBeenCalledWith('/root/folder1');
+    });
+
+    it('moves to parent with left arrow on collapsed node', () => {
+      Object.defineProperty(process.stdout, 'rows', { value: 30, writable: true, configurable: true });
+
+      const expandedPaths = new Set(['/root/folder1']);
+      const onSelect = vi.fn();
+
+      const tree: TreeNode[] = [
+        {
+          name: 'folder1',
+          path: '/root/folder1',
+          type: 'directory',
+          depth: 0,
+          expanded: true,
+          children: [
+            { name: 'file1.txt', path: '/root/folder1/file1.txt', type: 'file', depth: 1 },
+          ],
+        },
+      ];
+
+      const { stdin } = render(
+        <TreeView
+          fileTree={tree}
+          selectedPath="/root/folder1/file1.txt"
+          onSelect={onSelect}
+          expandedPaths={expandedPaths}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      // Press left arrow on child file (should move to parent)
+      stdin.write('\x1B[D');
+
+      // Should move to parent folder
+      expect(onSelect).toHaveBeenCalledWith('/root/folder1');
+    });
+
+    it('does nothing with left arrow on root node', () => {
+      Object.defineProperty(process.stdout, 'rows', { value: 30, writable: true, configurable: true });
+
+      const onSelect = vi.fn();
+      const onToggleExpand = vi.fn();
+
+      const tree: TreeNode[] = [
+        {
+          name: 'folder1',
+          path: '/root/folder1',
+          type: 'directory',
+          depth: 0,
+          expanded: false,
+          children: [],
+        },
+      ];
+
+      const { stdin } = render(
+        <TreeView
+          fileTree={tree}
+          selectedPath="/root/folder1"
+          onSelect={onSelect}
+          onToggleExpand={onToggleExpand}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      // Press left arrow on root collapsed folder
+      stdin.write('\x1B[D');
+
+      // Should not call onSelect (can't move to parent at depth 0)
+      expect(onSelect).not.toHaveBeenCalled();
+      // Should not toggle (already collapsed)
+      expect(onToggleExpand).not.toHaveBeenCalled();
+    });
+
+    it('expands collapsed folder with right arrow', () => {
+      Object.defineProperty(process.stdout, 'rows', { value: 30, writable: true, configurable: true });
+
+      const expandedPaths = new Set<string>();
+      const onToggleExpand = vi.fn();
+
+      const tree: TreeNode[] = [
+        {
+          name: 'folder1',
+          path: '/root/folder1',
+          type: 'directory',
+          depth: 0,
+          expanded: false,
+          children: [
+            { name: 'file1.txt', path: '/root/folder1/file1.txt', type: 'file', depth: 1 },
+          ],
+        },
+      ];
+
+      const { stdin } = render(
+        <TreeView
+          fileTree={tree}
+          selectedPath="/root/folder1"
+          onSelect={vi.fn()}
+          onToggleExpand={onToggleExpand}
+          expandedPaths={expandedPaths}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      // Press right arrow on collapsed folder
+      stdin.write('\x1B[C');
+
+      // Should toggle (expand) the folder
+      expect(onToggleExpand).toHaveBeenCalledWith('/root/folder1');
+    });
+
+    it('moves to first child with right arrow on expanded folder', () => {
+      Object.defineProperty(process.stdout, 'rows', { value: 30, writable: true, configurable: true });
+
+      const expandedPaths = new Set(['/root/folder1']);
+      const onSelect = vi.fn();
+
+      const tree: TreeNode[] = [
+        {
+          name: 'folder1',
+          path: '/root/folder1',
+          type: 'directory',
+          depth: 0,
+          expanded: true,
+          children: [
+            { name: 'file1.txt', path: '/root/folder1/file1.txt', type: 'file', depth: 1 },
+            { name: 'file2.txt', path: '/root/folder1/file2.txt', type: 'file', depth: 1 },
+          ],
+        },
+      ];
+
+      const { stdin } = render(
+        <TreeView
+          fileTree={tree}
+          selectedPath="/root/folder1"
+          onSelect={onSelect}
+          expandedPaths={expandedPaths}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      // Press right arrow on expanded folder with children
+      stdin.write('\x1B[C');
+
+      // Should move to first child
+      expect(onSelect).toHaveBeenCalledWith('/root/folder1/file1.txt');
+    });
+
+    it('does nothing with right arrow on expanded folder without children', () => {
+      Object.defineProperty(process.stdout, 'rows', { value: 30, writable: true, configurable: true });
+
+      const expandedPaths = new Set(['/root/folder1']);
+      const onSelect = vi.fn();
+      const onToggleExpand = vi.fn();
+
+      const tree: TreeNode[] = [
+        {
+          name: 'folder1',
+          path: '/root/folder1',
+          type: 'directory',
+          depth: 0,
+          expanded: true,
+          children: [],
+        },
+      ];
+
+      const { stdin } = render(
+        <TreeView
+          fileTree={tree}
+          selectedPath="/root/folder1"
+          onSelect={onSelect}
+          onToggleExpand={onToggleExpand}
+          expandedPaths={expandedPaths}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      // Press right arrow on expanded empty folder
+      stdin.write('\x1B[C');
+
+      // Should not move or toggle
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(onToggleExpand).not.toHaveBeenCalled();
+    });
+
+    it('does nothing with right arrow on file', () => {
+      Object.defineProperty(process.stdout, 'rows', { value: 30, writable: true, configurable: true });
+
+      const onSelect = vi.fn();
+      const onToggleExpand = vi.fn();
+
+      const tree: TreeNode[] = [
+        { name: 'file1.txt', path: '/root/file1.txt', type: 'file', depth: 0 },
+      ];
+
+      const { stdin } = render(
+        <TreeView
+          fileTree={tree}
+          selectedPath="/root/file1.txt"
+          onSelect={onSelect}
+          onToggleExpand={onToggleExpand}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      // Press right arrow on file
+      stdin.write('\x1B[C');
+
+      // Should do nothing
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(onToggleExpand).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Enter key navigation', () => {
+    it('selects file with Enter key', () => {
+      Object.defineProperty(process.stdout, 'rows', { value: 30, writable: true, configurable: true });
+
+      const onSelect = vi.fn();
+
+      const tree: TreeNode[] = [
+        { name: 'file1.txt', path: '/root/file1.txt', type: 'file', depth: 0 },
+      ];
+
+      const { stdin } = render(
+        <TreeView
+          fileTree={tree}
+          selectedPath="/root/file1.txt"
+          onSelect={onSelect}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      // Press Enter on file
+      stdin.write('\r');
+
+      // Should call onSelect (open file)
+      expect(onSelect).toHaveBeenCalledWith('/root/file1.txt');
+    });
+
+    it('toggles folder with Enter key', () => {
+      Object.defineProperty(process.stdout, 'rows', { value: 30, writable: true, configurable: true });
+
+      const expandedPaths = new Set<string>();
+      const onToggleExpand = vi.fn();
+
+      const tree: TreeNode[] = [
+        {
+          name: 'folder1',
+          path: '/root/folder1',
+          type: 'directory',
+          depth: 0,
+          expanded: false,
+          children: [],
+        },
+      ];
+
+      const { stdin } = render(
+        <TreeView
+          fileTree={tree}
+          selectedPath="/root/folder1"
+          onSelect={vi.fn()}
+          onToggleExpand={onToggleExpand}
+          expandedPaths={expandedPaths}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      // Press Enter on folder
+      stdin.write('\r');
+
+      // Should toggle folder
+      expect(onToggleExpand).toHaveBeenCalledWith('/root/folder1');
+    });
+  });
 });

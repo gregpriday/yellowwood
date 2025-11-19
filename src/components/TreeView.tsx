@@ -174,6 +174,56 @@ export const TreeView: React.FC<TreeViewProps> = ({
     });
   }, [isControlledExpansion, onToggleExpand]);
 
+  const handleNavigateLeft = useCallback(() => {
+    const node = flattenedTree[cursorIndex];
+    if (!node) return;
+
+    if (node.type === 'directory' && node.expanded) {
+      // Collapse current folder
+      handleToggle(node.path);
+    } else if (node.depth > 0) {
+      // Move to parent folder
+      // Find parent by walking backwards to find a node with depth one less
+      const targetDepth = node.depth - 1;
+      for (let i = cursorIndex - 1; i >= 0; i--) {
+        if (flattenedTree[i].depth === targetDepth) {
+          onSelect(flattenedTree[i].path);
+          return;
+        }
+      }
+    }
+  }, [cursorIndex, flattenedTree, handleToggle, onSelect]);
+
+  const handleNavigateRight = useCallback(() => {
+    const node = flattenedTree[cursorIndex];
+    if (!node) return;
+
+    if (node.type === 'directory') {
+      if (!node.expanded) {
+        // Expand current folder
+        handleToggle(node.path);
+      } else if (node.children && node.children.length > 0) {
+        // Move to first child (which is the next node in flattened tree)
+        const nextIndex = cursorIndex + 1;
+        if (flattenedTree[nextIndex]) {
+          onSelect(flattenedTree[nextIndex].path);
+        }
+      }
+    }
+  }, [cursorIndex, flattenedTree, handleToggle, onSelect]);
+
+  const handleOpenFile = useCallback(() => {
+    const node = flattenedTree[cursorIndex];
+    if (!node) return;
+
+    if (node.type === 'file') {
+      onSelect(node.path); // For now, opening a file = selecting it
+    } else {
+      // For directories, toggle expansion
+      handleToggle(node.path);
+    }
+  }, [cursorIndex, flattenedTree, handleToggle, onSelect]);
+
   const handleScrollChange = useCallback((newOffset: number) => {
     setScrollOffset(newOffset);
   }, []);
@@ -182,10 +232,13 @@ export const TreeView: React.FC<TreeViewProps> = ({
   useKeyboard(disableKeyboard ? {} : {
     onNavigateUp: handleNavigateUp,
     onNavigateDown: handleNavigateDown,
+    onNavigateLeft: handleNavigateLeft,
+    onNavigateRight: handleNavigateRight,
     onPageUp: handlePageUp,
     onPageDown: handlePageDown,
     onHome: handleHome,
     onEnd: handleEnd,
+    onOpenFile: handleOpenFile,
     onToggleExpand: handleToggleExpand,
   });
 
