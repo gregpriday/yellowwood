@@ -21,6 +21,32 @@ export interface Notification {
   type: NotificationType;
 }
 
+export interface CommandContext {
+  /** Current file tree (read-only for parser) */
+  fileTree: TreeNode[];
+
+  /** Map of file paths to their git status (read-only) */
+  gitStatus: Map<string, GitStatus>;
+
+  /** Whether git is available in current repository */
+  gitEnabled: boolean;
+
+  /** Setter to update git status filter (null to clear) */
+  setGitStatusFilter: (filter: GitStatus | GitStatus[] | null) => void;
+
+  /** Setter to update filter active status */
+  setFilterActive: (active: boolean) => void;
+
+  /** Setter to update filter query display string */
+  setFilterQuery: (query: string | null) => void;
+
+  /** Setter to display notifications to user */
+  setNotification: (notification: Notification) => void;
+
+  /** Current command history for autocomplete/reference */
+  commandHistory: string[];
+}
+
 /**
  * Represents a single git worktree.
  * Git worktrees allow multiple working trees attached to the same repository,

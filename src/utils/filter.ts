@@ -27,13 +27,14 @@ export function filterTreeByName(tree: TreeNode[], pattern: string): TreeNode[] 
  * Preserves folder hierarchy - parent folders are included if any descendant matches.
  *
  * @param tree - Array of TreeNode to filter
- * @param status - Git status to filter by
+ * @param status - Git status(es) to filter by (single status or array of statuses)
  * @returns Filtered tree with matching nodes and their ancestors
  */
-export function filterTreeByGitStatus(tree: TreeNode[], status: GitStatus): TreeNode[] {
+export function filterTreeByGitStatus(tree: TreeNode[], status: GitStatus | GitStatus[]): TreeNode[] {
   const visited = new Set<string>();
+  const statuses = Array.isArray(status) ? status : [status];
   return tree
-    .map(node => filterNodeByGitStatus(node, status, visited))
+    .map(node => filterNodeByGitStatus(node, statuses, visited))
     .filter((node): node is TreeNode => node !== null);
 }
 
@@ -83,10 +84,10 @@ function filterNodeByName(node: TreeNode, pattern: string, visited: Set<string> 
 }
 
 /**
- * Recursively filter a node by git status.
+ * Recursively filter a node by git status(es).
  * Returns the node if it or any descendant matches, null otherwise.
  */
-function filterNodeByGitStatus(node: TreeNode, status: GitStatus, visited: Set<string> = new Set()): TreeNode | null {
+function filterNodeByGitStatus(node: TreeNode, statuses: GitStatus[], visited: Set<string> = new Set()): TreeNode | null {
   // Prevent infinite recursion from circular references
   if (visited.has(node.path)) {
     return null; // Skip circular references
@@ -94,7 +95,7 @@ function filterNodeByGitStatus(node: TreeNode, status: GitStatus, visited: Set<s
 
   visited.add(node.path);
 
-  const statusMatches = node.gitStatus === status;
+  const statusMatches = node.gitStatus !== undefined && statuses.includes(node.gitStatus);
 
   // For files: include if git status matches
   if (node.type === 'file') {
@@ -104,7 +105,7 @@ function filterNodeByGitStatus(node: TreeNode, status: GitStatus, visited: Set<s
   // For folders: check children recursively
   if (node.children) {
     const filteredChildren = node.children
-      .map(child => filterNodeByGitStatus(child, status, visited))
+      .map(child => filterNodeByGitStatus(child, statuses, visited))
       .filter((child): child is TreeNode => child !== null);
 
     // Include folder if it has matching children
