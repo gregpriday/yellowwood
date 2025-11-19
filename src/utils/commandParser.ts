@@ -154,6 +154,18 @@ function validateCommand(command: Command): void {
   if (typeof command.execute !== 'function') {
     throw new Error(`Command ${command.name} must have an execute function`);
   }
+
+  // Validate aliases
+  if (command.aliases) {
+    for (const alias of command.aliases) {
+      if (!alias.startsWith('/')) {
+        throw new Error(`Alias must start with /: ${alias} (in command ${command.name})`);
+      }
+      if (alias.includes(' ')) {
+        throw new Error(`Alias cannot contain spaces: ${alias} (in command ${command.name})`);
+      }
+    }
+  }
 }
 
 /**
@@ -360,7 +372,8 @@ export async function executeCommand(
       // Free text → treat as filter (default behavior)
       const filterCommand = findCommand('/filter', registry);
       if (filterCommand) {
-        return await filterCommand.execute([input], context);
+        // Use trimmed input for consistency with explicit /filter command
+        return await filterCommand.execute([parsed.args[0]], context);
       } else {
         return {
           success: false,

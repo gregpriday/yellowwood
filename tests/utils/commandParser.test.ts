@@ -62,6 +62,12 @@ describe('parseCommand', () => {
     const parsed = parseCommand('/filter MyComponent');
     expect(parsed.args).toEqual(['MyComponent']);
   });
+
+  it('parses command with multiple arguments correctly', () => {
+    const parsed = parseCommand('/filter foo bar baz');
+    expect(parsed.command).toBe('/filter');
+    expect(parsed.args).toEqual(['foo', 'bar', 'baz']);
+  });
 });
 
 describe('findCommand', () => {
@@ -226,6 +232,30 @@ describe('registerCommand', () => {
 
     registerCommand(registry, command1);
     expect(() => registerCommand(registry, command2)).toThrow('conflicts with existing command');
+  });
+
+  it('throws error if alias does not start with /', () => {
+    const registry: Command[] = [];
+    const command: Command = {
+      name: '/test',
+      aliases: ['test'],
+      description: 'Test',
+      execute: async () => ({ success: true }),
+    };
+
+    expect(() => registerCommand(registry, command)).toThrow('Alias must start with /');
+  });
+
+  it('throws error if alias contains spaces', () => {
+    const registry: Command[] = [];
+    const command: Command = {
+      name: '/test',
+      aliases: ['/test alias'],
+      description: 'Test',
+      execute: async () => ({ success: true }),
+    };
+
+    expect(() => registerCommand(registry, command)).toThrow('Alias cannot contain spaces');
   });
 });
 
@@ -420,11 +450,37 @@ describe('executeCommand', () => {
     expect(result.error).toContain('Unknown command: /unknown');
   });
 
+  it('returns error for free text when /filter is missing from registry', async () => {
+    const registry: Command[] = [
+      {
+        name: '/git',
+        description: 'Git',
+        execute: async () => ({ success: true }),
+      },
+    ];
+    const context = createMockContext();
+
+    const result = await executeCommand('some text', registry, context);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Unknown command: /filter');
+  });
+
   it('returns error for empty input', async () => {
     const registry: Command[] = [];
     const context = createMockContext();
 
     const result = await executeCommand('', registry, context);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Empty command');
+  });
+
+  it('returns error for whitespace-only input', async () => {
+    const registry: Command[] = [];
+    const context = createMockContext();
+
+    const result = await executeCommand('   ', registry, context);
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Empty command');
@@ -720,6 +776,11 @@ describe('Built-in commands integration', () => {
       const result = await executeCommand('/wt main', registry, context);
 
       expect(result.success).toBe(true);
+      expect(result.message).toBe('Switch to main (stub)');
+      expect(context.notify).toHaveBeenCalledWith({
+        type: 'info',
+        message: 'Switching to worktree: main',
+      });
     });
 
     it('returns error when no arguments provided', async () => {
@@ -729,6 +790,36 @@ describe('Built-in commands integration', () => {
       const result = await executeCommand('/wt', registry, context);
 
       expect(result.success).toBe(false);
+    });
+  });
+
+  describe('/copytree command', () => {
+    it('returns warning for Phase 2+ feature', async () => {
+      const registry = createCommandRegistry();
+      const context = createMockContext();
+
+      const result = await executeCommand('/copytree', registry, context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Not implemented yet (Phase 2+)');
+      expect(context.notify).toHaveBeenCalledWith({
+        type: 'warning',
+        message: 'CopyTree integration coming in Phase 2',
+      });
+    });
+
+    it('handles /ct alias', async () => {
+      const registry = createCommandRegistry();
+      const context = createMockContext();
+
+      const result = await executeCommand('/ct path/to/file', registry, context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Not implemented yet (Phase 2+)');
+      expect(context.notify).toHaveBeenCalledWith({
+        type: 'warning',
+        message: 'CopyTree integration coming in Phase 2',
+      });
     });
   });
 });
