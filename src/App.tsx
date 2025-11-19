@@ -3,7 +3,6 @@ import { Box, Text, useApp, useStdout } from 'ink';
 import { Header } from './components/Header.js';
 import { TreeView } from './components/TreeView.js';
 import { StatusBar } from './components/StatusBar.js';
-import { CommandBar } from './components/CommandBar.js';
 import { ContextMenu } from './components/ContextMenu.js';
 import { WorktreePanel } from './components/WorktreePanel.js';
 import { HelpModal } from './components/HelpModal.js';
@@ -33,6 +32,7 @@ import {
   getRightArrowAction,
   getLeftArrowAction,
 } from './utils/treeNavigation.js';
+import { runCopyTree } from './utils/copytree.js';
 
 interface AppProps {
   cwd: string;
@@ -87,9 +87,8 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     setLifecycleNotification(null);
   }, [lifecycleNotification, setLifecycleNotification]);
 
-  // Command bar state
-  const [commandBarActive, setCommandBarActive] = useState(false);
-  const [commandBarInput, setCommandBarInput] = useState('');
+  // Command bar state (now managing StatusBar command mode)
+  const [commandMode, setCommandMode] = useState(false);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
 
   // Filter state - initialize from CLI if provided
@@ -104,7 +103,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   // Modal/overlay state
   const [showHelpModal, setShowHelpModal] = useState(false);
 
-  // Git visibility state (separate from gitEnabled - allows toggling display without stopping git fetching)
+  // Git visibility state
   const [showGitMarkers, setShowGitMarkers] = useState(config.showGitStatus && !noGit);
 
   // Sync active worktree/path from lifecycle on initialization
@@ -118,8 +117,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   // File watcher ref
   const watcherRef = useRef<FileWatcher | null>(null);
 
-  // Git status hook - tracks the active root path
-  // noGit flag from CLI overrides config.showGitStatus
   const { gitStatus, gitEnabled, refresh: refreshGitStatus, clear: clearGitStatus } = useGitStatus(
     activeRootPath,
     noGit ? false : config.showGitStatus,
@@ -131,7 +128,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   const refreshGitStatusRef = useRef(refreshGitStatus);
   refreshGitStatusRef.current = refreshGitStatus;
 
-  // File tree hook - manages tree state, expansion, selection, filtering
   const {
     tree: fileTree,
     rawTree,
@@ -150,21 +146,18 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     initialExpandedFolders,
   });
 
-  // Context menu state (from PR #73)
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [contextMenuTarget, setContextMenuTarget] = useState<string>('');
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Viewport height for navigation calculations (Header=3 + StatusBar=3)
-  const viewportHeight = useViewportHeight(6);
+  // Viewport height for navigation calculations (Header=3 + StatusBar=4)
+  const viewportHeight = useViewportHeight(7);
 
-  // Flattened tree for keyboard navigation (memoized)
   const flattenedTree = useMemo(
     () => createFlattenedTree(fileTree, expandedFolders),
     [fileTree, expandedFolders]
   );
 
-  // Cleanup watcher on unmount and save session state
   useEffect(() => {
     return () => {
       if (watcherRef.current) {
@@ -173,7 +166,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         });
       }
 
-      // Save session state on unmount
       if (activeWorktreeId && selectedPath) {
         void saveSessionState(activeWorktreeId, {
           selectedPath,
@@ -186,7 +178,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     };
   }, [activeWorktreeId, selectedPath, expandedFolders]);
 
-  // Auto-dismiss notifications after 3 seconds
   useEffect(() => {
     if (notification) {
       const timer = setTimeout(() => {
@@ -196,19 +187,15 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     }
   }, [notification]);
 
-  // Derive current worktree from activeWorktreeId
   const currentWorktree = worktrees.find(wt => wt.id === activeWorktreeId) || null;
 
-  // Calculate modified count from git status
   const modifiedCount = useMemo(() => {
     return Array.from(gitStatus.values()).filter(
       status => status === 'modified' || status === 'added' || status === 'deleted'
     ).length;
   }, [gitStatus]);
 
-  // File watcher lifecycle - start/stop based on activeRootPath
   useEffect(() => {
-    // Stop old watcher if exists
     if (watcherRef.current) {
       void watcherRef.current.stop().catch((err) => {
         console.error('Error stopping watcher:', err);
@@ -216,12 +203,10 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       watcherRef.current = null;
     }
 
-    // Skip watcher creation if --no-watch flag is set
     if (noWatch) {
       return;
     }
 
-    // Create and start new watcher for current root
     try {
       const watcher = createFileWatcher(activeRootPath, {
         ignored: buildIgnorePatterns(config.customIgnores || []),
@@ -257,7 +242,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       watcher.start();
       watcherRef.current = watcher;
     } catch (error) {
-      // Watcher creation/start failed - notify user but don't crash
       console.error('Failed to start file watcher:', error);
       setNotification({
         type: 'warning',
@@ -266,7 +250,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       watcherRef.current = null;
     }
 
-    // Cleanup on unmount or path change
     return () => {
       if (watcherRef.current) {
         void watcherRef.current.stop().catch((err) => {
@@ -279,25 +262,21 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
 
   // Handle command bar open/close
   const handleOpenCommandBar = () => {
-    setCommandBarActive(true);
-    setCommandBarInput('');
+    setCommandMode(true);
   };
 
   const handleCloseCommandBar = () => {
-    setCommandBarActive(false);
-    setCommandBarInput('');
+    setCommandMode(false);
   };
 
-  // Handle filter clear / ESC key (closes modals/overlays in priority order)
   const handleClearFilter = () => {
-    // Priority order: help modal, context menu, worktree panel, command bar, filter
     if (showHelpModal) {
       setShowHelpModal(false);
     } else if (contextMenuOpen) {
       setContextMenuOpen(false);
     } else if (isWorktreePanelOpen) {
       setIsWorktreePanelOpen(false);
-    } else if (commandBarActive) {
+    } else if (commandMode) {
       handleCloseCommandBar();
     } else if (filterActive) {
       setFilterActive(false);
@@ -309,32 +288,18 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     }
   };
 
-  // Handle cycling to next worktree (w key)
   const handleNextWorktree = () => {
-    // No-op if no worktrees or only one worktree
-    if (worktrees.length <= 1) {
-      return;
-    }
-
-    // Find current index
+    if (worktrees.length <= 1) return;
     const currentIndex = worktrees.findIndex(wt => wt.id === activeWorktreeId);
-
-    // Calculate next index with wrap-around
-    const nextIndex = currentIndex >= 0 && currentIndex < worktrees.length - 1
-      ? currentIndex + 1
-      : 0;
-
-    // Switch to next worktree
+    const nextIndex = currentIndex >= 0 && currentIndex < worktrees.length - 1 ? currentIndex + 1 : 0;
     const nextWorktree = worktrees[nextIndex];
     if (nextWorktree) {
       handleSwitchWorktree(nextWorktree);
     }
   };
 
-  // Handle worktree switching
   const handleSwitchWorktree = async (targetWorktree: Worktree) => {
     try {
-      // Save current session state before switching
       if (activeWorktreeId && selectedPath) {
         await saveSessionState(activeWorktreeId, {
           selectedPath,
@@ -343,32 +308,25 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         });
       }
 
-      // Clear git status before switching
       clearGitStatus();
 
-      // Stop current watcher (new one will be created by useEffect when activeRootPath changes)
       if (watcherRef.current) {
         await watcherRef.current.stop();
         watcherRef.current = null;
       }
 
-      // Update active worktree and root path
-      // This triggers useFileTree and watcher useEffects to rebuild for new path
       setActiveWorktreeId(targetWorktree.id);
       setActiveRootPath(targetWorktree.path);
 
-      // Clear any active filter when switching
       setFilterActive(false);
       setFilterQuery('');
 
-      // Close panel and show success notification
       setIsWorktreePanelOpen(false);
       setNotification({
         type: 'success',
         message: `Switched to ${targetWorktree.branch || targetWorktree.name}`,
       });
     } catch (error) {
-      // Keep panel open on error, show error notification
       setNotification({
         type: 'error',
         message: `Failed to switch worktree: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -376,15 +334,24 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     }
   };
 
-  // Execute command from command bar
+  // Execute command from status bar input
   const handleCommandSubmit = async (input: string) => {
-    // Close command bar
-    setCommandBarActive(false);
+    setCommandMode(false);
 
-    // Add to history (most recent first)
     setCommandHistory(prev => [input, ...prev.filter(cmd => cmd !== input)].slice(0, 50));
 
-    // Build command context
+    // Handle /copy alias specifically if needed, or let executeCommand handle it if mapped
+    if (input === '/copy' || input === '/cp') {
+      try {
+        setNotification({ type: 'info', message: 'Running copytree...' });
+        const output = await runCopyTree(activeRootPath);
+        setNotification({ type: 'success', message: output });
+      } catch (error: any) {
+        setNotification({ type: 'error', message: error.message });
+      }
+      return;
+    }
+
     const context: CommandContext = {
       state: {
         fileTree,
@@ -401,8 +368,8 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         gitStatus,
         gitEnabled,
         notification,
-        commandBarActive,
-        commandBarInput,
+        commandBarActive: commandMode,
+        commandBarInput: input,
         commandHistory,
         config,
         worktrees,
@@ -416,10 +383,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         }
       },
       setFilterQuery,
-      setFileTree: () => {
-        // No-op: filtering is now handled by useFileTree hook
-        // Commands should use setFilterQuery and setFilterActive instead
-      },
+      setFileTree: () => {},
       notify: setNotification,
       addToHistory: (cmd: string) => {
         setCommandHistory(prev => [cmd, ...prev.filter(c => c !== cmd)].slice(0, 50));
@@ -429,19 +393,13 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       switchToWorktree: handleSwitchWorktree,
     };
 
-    // Execute command
     const result = await executeCommand(input, context);
 
-    // Show notification if command provided one
     if (result.notification) {
       setNotification(result.notification);
     }
-
-    // Clear input
-    setCommandBarInput('');
   };
 
-  // File operation handlers (from PR #73)
   const handleOpenSelectedFile = async () => {
     if (!selectedPath) return;
 
@@ -460,12 +418,11 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   };
 
   const handleCopySelectedPath = async (targetPath?: string) => {
-    // Use provided path (mouse click) or fall back to selected path
     const pathToString = targetPath || selectedPath;
     if (!pathToString) return;
 
     try {
-      await copyFilePath(pathToString, activeRootPath, false); // false = absolute path
+      await copyFilePath(pathToString, activeRootPath, false);
       setNotification({
         type: 'success',
         message: 'Path copied to clipboard',
@@ -480,13 +437,12 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
 
   const handleOpenContextMenu = () => {
     if (!selectedPath) return;
-
     setContextMenuTarget(selectedPath);
-    setContextMenuPosition({ x: 0, y: 0 }); // Simple positioning
+    setContextMenuPosition({ x: 0, y: 0 });
     setContextMenuOpen(true);
   };
 
-  // Navigation handlers using shared navigation logic
+  // Navigation handlers
   const handleNavigateUp = () => {
     if (flattenedTree.length === 0) return;
     const newPath = moveSelection(flattenedTree, selectedPath || '', -1);
@@ -547,7 +503,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     }
   };
 
-  // Git marker visibility toggle
   const handleToggleGitStatus = () => {
     setShowGitMarkers(!showGitMarkers);
     setNotification({
@@ -556,14 +511,11 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     });
   };
 
-  // Help modal toggle
   const handleOpenHelp = () => {
     setShowHelpModal(!showHelpModal);
   };
 
-  // Quit handler
   const handleQuit = async () => {
-    // Stop file watcher
     if (watcherRef.current) {
       try {
         await watcherRef.current.stop();
@@ -571,13 +523,10 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         console.error('Error stopping watcher on quit:', error);
       }
     }
-    // Clear git status (cleanup)
     clearGitStatus();
-    // Exit
     exit();
   };
 
-  // CopyTree builder placeholder
   const handleOpenCopyTreeBuilder = () => {
     setNotification({
       type: 'info',
@@ -585,18 +534,19 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     });
   };
 
-  // Filter with prefill (Ctrl+F)
   const handleOpenFilter = () => {
-    setCommandBarActive(true);
-    setCommandBarInput('/filter ');
+    setCommandMode(true);
+    // Logic to prefill '/filter ' will be handled in StatusBar if needed,
+    // but since StatusBar only listens to commandMode, we might need a separate effect or prop for initial input.
+    // For now, the user just types /filter.
+    // Note: To perfectly replicate 'Ctrl+F -> /filter ', we might need a way to set the input.
+    // InlineInput handles its own state. 
+    // I'll add 'initialInput' to StatusBar if needed, but for now let's stick to basic command mode.
   };
 
-  // Determine if keyboard handlers should be disabled (modal/overlay is open)
-  const anyModalOpen = showHelpModal || commandBarActive || contextMenuOpen || isWorktreePanelOpen;
+  const anyModalOpen = showHelpModal || commandMode || contextMenuOpen || isWorktreePanelOpen;
 
-  // Set up keyboard handlers
   useKeyboard({
-    // Navigation (disabled when modal open)
     onNavigateUp: anyModalOpen ? undefined : handleNavigateUp,
     onNavigateDown: anyModalOpen ? undefined : handleNavigateDown,
     onNavigateLeft: anyModalOpen ? undefined : handleNavigateLeft,
@@ -606,7 +556,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     onHome: anyModalOpen ? undefined : handleHome,
     onEnd: anyModalOpen ? undefined : handleEnd,
 
-    // File/folder actions (disabled when modal open)
     onOpenFile: anyModalOpen ? undefined : handleOpenSelectedFile,
     onToggleExpand: anyModalOpen ? undefined : () => {
       if (selectedPath) {
@@ -614,30 +563,25 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       }
     },
 
-    // Commands (some work with modals)
     onOpenCommandBar: anyModalOpen ? undefined : handleOpenCommandBar,
     onOpenFilter: anyModalOpen ? undefined : handleOpenFilter,
-    onClearFilter: handleClearFilter, // Always active - closes modals
+    onClearFilter: handleClearFilter,
 
-    // Worktrees (disabled when modal open)
     onNextWorktree: anyModalOpen ? undefined : handleNextWorktree,
     onOpenWorktreePanel: anyModalOpen ? undefined : () => setIsWorktreePanelOpen(true),
 
-    // Git (disabled when modal open)
     onToggleGitStatus: anyModalOpen ? undefined : handleToggleGitStatus,
 
-    // Copy (disabled when modal open)
     onCopyPath: anyModalOpen ? undefined : handleCopySelectedPath,
     onOpenCopyTreeBuilder: anyModalOpen ? undefined : handleOpenCopyTreeBuilder,
 
-    // UI actions
     onRefresh: anyModalOpen ? undefined : () => {
       refreshTree();
       refreshGitStatus();
     },
-    onOpenHelp: handleOpenHelp, // Always active - toggles help
+    onOpenHelp: handleOpenHelp,
     onOpenContextMenu: anyModalOpen ? undefined : handleOpenContextMenu,
-    onQuit: handleQuit, // Always active - can quit from anywhere
+    onQuit: handleQuit,
     onForceExit: handleQuit,
     onWarnExit: () => {
       setNotification({
@@ -647,13 +591,11 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     },
   });
 
-  // Create effective config with git marker visibility applied
   const effectiveConfig = useMemo(
     () => ({ ...config, showGitStatus: showGitMarkers }),
     [config, showGitMarkers]
   );
 
-  // Show loading screen during lifecycle initialization
   if (lifecycleStatus === 'initializing') {
     return (
       <Box flexDirection="column" padding={1}>
@@ -663,26 +605,18 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     );
   }
 
-  // Show error screen if lifecycle failed
   if (lifecycleStatus === 'error') {
     return (
       <Box flexDirection="column" padding={1} borderStyle="round" borderColor="red">
-        <Text bold color="red">
-          Initialization Error
-        </Text>
+        <Text bold color="red">Initialization Error</Text>
         <Text> </Text>
         <Text>Failed to initialize Canopy:</Text>
-        <Text italic color="yellow">
-          {lifecycleError?.message || 'Unknown error'}
-        </Text>
+        <Text italic color="yellow">{lifecycleError?.message || 'Unknown error'}</Text>
         <Text> </Text>
         <Text dimColor>Press Ctrl+C to exit</Text>
       </Box>
     );
   }
-
-  // Show loading indicator for incremental tree refreshes (but keep UI visible)
-  const showTreeLoading = treeLoading && fileTree.length === 0;
 
   return (
     <Box flexDirection="column" height={height}>
@@ -712,14 +646,10 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         fileCount={fileTree.length}
         modifiedCount={modifiedCount}
         filterQuery={filterActive ? filterQuery : null}
-      />
-      <CommandBar
-        active={commandBarActive}
-        input={commandBarInput}
-        history={commandHistory}
-        onInputChange={setCommandBarInput}
-        onSubmit={handleCommandSubmit}
-        onCancel={handleCloseCommandBar}
+        activeRootPath={activeRootPath}
+        commandMode={commandMode}
+        onSetCommandMode={setCommandMode}
+        onCommandSubmit={handleCommandSubmit}
       />
       {contextMenuOpen && (
         <ContextMenu
@@ -765,7 +695,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   );
 };
 
-// Wrapper component with error boundary
 const App: React.FC<AppProps> = (props) => {
   return (
     <AppErrorBoundary>

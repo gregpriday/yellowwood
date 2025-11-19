@@ -1,28 +1,119 @@
-import React from 'react';
-import { Box, Text } from 'ink';
+import React, { useState, useEffect } from 'react';
+import { Box, Text, useStdout } from 'ink';
 import type { Notification, GitStatus } from '../types/index.js';
 import { perfMonitor } from '../utils/perfMetrics.js';
+import { ActionButton } from './StatusBar/ActionButton.js';
+import { ActionGroup } from './StatusBar/ActionGroup.js';
+import { InlineInput } from './StatusBar/InlineInput.js';
+import { runCopyTree } from '../utils/copytree.js';
+import { useTerminalMouse } from '../hooks/useTerminalMouse.js';
 
 interface StatusBarProps {
-	notification: Notification | null;
-	fileCount: number;
-	modifiedCount: number;
-	filterQuery?: string | null;
-	filterGitStatus?: GitStatus | null;
-	showPerformance?: boolean; // Show performance metrics
+  notification: Notification | null;
+  fileCount: number;
+  modifiedCount: number;
+  filterQuery?: string | null;
+  filterGitStatus?: GitStatus | null;
+  showPerformance?: boolean;
+  activeRootPath?: string;
+  
+  commandMode: boolean;
+  onSetCommandMode: (active: boolean) => void;
+  onCommandSubmit: (command: string) => void;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
-	notification,
-	fileCount,
-	modifiedCount,
-	filterQuery,
-	filterGitStatus,
-	showPerformance = false,
+  notification,
+  fileCount,
+  modifiedCount,
+  filterQuery,
+  filterGitStatus,
+  showPerformance = false,
+  activeRootPath = '.',
+  commandMode,
+  onSetCommandMode,
+  onCommandSubmit,
 }) => {
-  // When notification exists, show it instead of stats
+  const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [input, setInput] = useState('');
+  const { stdout } = useStdout();
+
+  useEffect(() => {
+    if (feedback) {
+      const timer = setTimeout(() => {
+        setFeedback(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [feedback]);
+
+  useEffect(() => {
+    if (commandMode) {
+      setInput('/');
+    }
+  }, [commandMode]);
+
+  const handleCopyTree = async () => {
+    try {
+      setFeedback({ message: 'Running copytree...', type: 'success' });
+      const output = await runCopyTree(activeRootPath);
+      setFeedback({ message: output, type: 'success' });
+    } catch (error: any) {
+      setFeedback({ message: error.message, type: 'error' });
+    }
+  };
+
+  // Mouse handling for CopyTree button
+  useTerminalMouse({
+    enabled: !commandMode && !notification && !feedback, // Only active in default mode
+    onMouse: (event) => {
+      if (event.button === 'left' && stdout) {
+        // Heuristic: Check if click is in the bottom-right area where the button is.
+        // Button is roughly 14 chars wide (border + padding + "CopyTree")
+        // StatusBar height with 2 lines of text is 4 lines (2 content + 2 border)
+        // So checking last 3 rows to be safe.
+        
+        const buttonWidth = 16; // "CopyTree" (8) + padding (2) + border (2) + margin (1) + generous buffer
+        const statusBarHeight = 5; // Generous height check (last 5 rows)
+        
+        const isBottom = event.y >= stdout.rows - statusBarHeight;
+        const isRight = event.x >= stdout.columns - buttonWidth;
+        
+        if (isBottom && isRight) {
+          handleCopyTree();
+        }
+      }
+    }
+  });
+
+  const handleCommandSubmitInternal = (value: string) => {
+    onCommandSubmit(value);
+    onSetCommandMode(false);
+  };
+
+  const handleCommandCancel = () => {
+    onSetCommandMode(false);
+  };
+
+  // 1. Command Mode (Overrides everything to allow full width input if needed, or partial)
+  // Spec 2.3: "The file stats and buttons disappear (or are pushed out), replaced by the command input."
+  // So we render ONLY input.
+  if (commandMode) {
+    return (
+      <Box borderStyle="single" paddingX={1}>
+        <InlineInput
+          input={input}
+          onChange={setInput}
+          onSubmit={handleCommandSubmitInternal}
+          onCancel={handleCommandCancel}
+        />
+      </Box>
+    );
+  }
+
+  // 2. Global Notification (Overrides everything)
   if (notification) {
-    const colorMap = {
+     const colorMap = {
       success: 'green',
       info: 'blue',
       warning: 'yellow',
@@ -38,94 +129,60 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     );
   }
 
-  // Build status sections
-  const sections: React.JSX.Element[] = [];
-
-  // Section 1: File statistics
-  sections.push(
-    <React.Fragment key="stats">
-      <Text>{fileCount} files</Text>
-      {modifiedCount > 0 && (
-        <>
-          <Text dimColor> • </Text>
-          <Text color="yellow">{modifiedCount} modified</Text>
-        </>
-      )}
-    </React.Fragment>
-  );
-
-  // Section 2: Active filters
+  // 3. Default Layout: Stats (Left) + Right Side (Feedback OR Buttons)
+  
+  // Filters Section (inline with files or separate?)
+  // We'll put filters next to file count for compactness, or on a 3rd line if needed.
+  // Let's append them to the first line if they exist.
+  const filterElements: React.JSX.Element[] = [];
   if (filterQuery || filterGitStatus) {
-    sections.push(
-      <React.Fragment key="filters">
-        <Text dimColor> • </Text>
-        {filterQuery && (
-          <Text color="cyan">
-            /filter: {filterQuery}
-          </Text>
-        )}
-        {filterQuery && filterGitStatus && (
-          <Text dimColor> • </Text>
-        )}
-        {filterGitStatus && (
-          <Text color="cyan">
-            /git: {filterGitStatus}
-          </Text>
-        )}
-      </React.Fragment>
-    );
+    filterElements.push(<Text key="sep" dimColor> • </Text>);
+    if (filterQuery) filterElements.push(<Text key="fq" color="cyan">/filter: {filterQuery}</Text>);
+    if (filterQuery && filterGitStatus) filterElements.push(<Text key="sep2" dimColor> • </Text>);
+    if (filterGitStatus) filterElements.push(<Text key="fgs" color="cyan">/git: {filterGitStatus}</Text>);
   }
 
-	// Section 3: Performance metrics (if enabled and no notification)
-	if (showPerformance && !notification) {
-		const gitStats = perfMonitor.getStats('git-status-fetch');
-		const gitCacheHits = perfMonitor.getStats('git-status-cache-hit');
-		const gitCacheMisses = perfMonitor.getStats('git-status-cache-miss');
-
-		if (gitStats || (gitCacheHits && gitCacheMisses)) {
-			sections.push(
-				<React.Fragment key="perf">
-					<Text dimColor> • </Text>
-					{gitStats && (
-						<Text dimColor>
-							Git {Math.round(gitStats.avg)}ms
-						</Text>
-					)}
-					{gitCacheHits && gitCacheMisses && (
-						<>
-							<Text dimColor> • </Text>
-							<Text dimColor>
-								Cache{' '}
-								{Math.round(
-									(gitCacheHits.count /
-										(gitCacheHits.count + gitCacheMisses.count)) *
-										100,
-								)}
-								%
-							</Text>
-						</>
-					)}
-				</React.Fragment>,
-			);
-		}
-	}
-
-	// Section 4: Help hints (only if no filters active and performance not shown)
-	if (!filterQuery && !filterGitStatus && !showPerformance) {
-		sections.push(
-			<React.Fragment key="hints">
-				<Text dimColor> • Press </Text>
-				<Text bold>?</Text>
-				<Text dimColor> for help • </Text>
-				<Text bold>/</Text>
-				<Text dimColor> for commands</Text>
-			</React.Fragment>,
-		);
-	}
+  // Performance Section
+  const perfElements: React.JSX.Element[] = [];
+  if (showPerformance) {
+    const gitStats = perfMonitor.getStats('git-status-fetch');
+    if (gitStats) {
+       perfElements.push(<Text key="sep" dimColor> • </Text>);
+       perfElements.push(<Text key="perf" dimColor>Git {Math.round(gitStats.avg)}ms</Text>);
+    }
+  }
 
   return (
-    <Box borderStyle="single" paddingX={1}>
-      {sections}
+    <Box borderStyle="single" paddingX={1} justifyContent="space-between">
+      <Box flexDirection="column">
+        <Box>
+          <Text>{fileCount} files</Text>
+          {filterElements}
+          {perfElements}
+        </Box>
+        <Box>
+          {modifiedCount > 0 ? (
+            <Text color="yellow">{modifiedCount} modified</Text>
+          ) : (
+            <Text dimColor>No changes</Text>
+          )}
+        </Box>
+      </Box>
+      
+      {feedback ? (
+        <Box marginLeft={1}>
+           <Text color={feedback.type === 'success' ? 'white' : 'red'}>
+            {feedback.type === 'success' ? '📎 ' : ''}{feedback.message}
+          </Text>
+        </Box>
+      ) : (
+        <ActionGroup>
+          <ActionButton 
+            label="CopyTree" 
+            onAction={handleCopyTree}
+          />
+        </ActionGroup>
+      )}
     </Box>
   );
 };

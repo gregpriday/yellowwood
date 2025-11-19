@@ -298,13 +298,13 @@ describe('TreeView virtualization', () => {
         />
       );
 
-      // Press PageDown (viewport is 27 rows)
+      // Press PageDown (viewport is 23 rows: 30 - 7 reserved)
       stdin.write('\x1B[6~');
 
       // Should jump by viewport height
       expect(onSelect).toHaveBeenCalled();
       const lastCall = onSelect.mock.calls[onSelect.mock.calls.length - 1][0];
-      expect(lastCall).toContain('file-27.txt');
+      expect(lastCall).toContain('file-23.txt');
     });
 
     it('jumps to start on Home', () => {

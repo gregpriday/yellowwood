@@ -35,8 +35,8 @@ export const TreeView: React.FC<TreeViewProps> = ({
   disableKeyboard = false,
   onCopyPath,
 }) => {
-  // Header (3) + StatusBar (3) = 6 reserved rows
-  const viewportHeight = useViewportHeight(6);
+  // Header (3) + StatusBar (4) = 7 reserved rows
+  const viewportHeight = useViewportHeight(7);
 
   // Scroll state
   const [scrollOffset, setScrollOffset] = useState(0);
