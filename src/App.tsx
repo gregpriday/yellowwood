@@ -6,13 +6,14 @@ import { StatusBar } from './components/StatusBar.js';
 import { CommandBar } from './components/CommandBar.js';
 import { ContextMenu } from './components/ContextMenu.js';
 import { WorktreePanel } from './components/WorktreePanel.js';
+import { AppErrorBoundary } from './components/AppErrorBoundary.js';
 import { DEFAULT_CONFIG } from './types/index.js';
 import type { YellowwoodConfig, TreeNode, Notification, Worktree } from './types/index.js';
 import { executeCommand } from './commands/index.js';
 import type { CommandContext } from './commands/index.js';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import { useFileTree } from './hooks/useFileTree.js';
-import { getWorktrees, getCurrentWorktree } from './utils/worktree.js';
+import { useAppLifecycle } from './hooks/useAppLifecycle.js';
 import { openFile } from './utils/fileOpener.js';
 import { copyFilePath } from './utils/clipboard.js';
 import path from 'path';
@@ -28,10 +29,31 @@ interface AppProps {
   initialFilter?: string;
 }
 
-const App: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, noGit, initialFilter }) => {
-  const [config] = useState<YellowwoodConfig>(initialConfig || DEFAULT_CONFIG);
+const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, noGit, initialFilter }) => {
+  // Centralized lifecycle management
+  const {
+    status: lifecycleStatus,
+    config,
+    worktrees,
+    activeWorktreeId: initialActiveWorktreeId,
+    activeRootPath: initialActiveRootPath,
+    error: lifecycleError,
+    notification: lifecycleNotification,
+    setNotification: setLifecycleNotification,
+    reinitialize,
+  } = useAppLifecycle({ cwd, initialConfig, noWatch, noGit });
+
+  // Local notification state (merged with lifecycle notifications)
   const [notification, setNotification] = useState<Notification | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!lifecycleNotification) {
+      return;
+    }
+
+    setNotification(lifecycleNotification);
+    setLifecycleNotification(null);
+  }, [lifecycleNotification, setLifecycleNotification]);
 
   // Command bar state
   const [commandBarActive, setCommandBarActive] = useState(false);
@@ -42,11 +64,18 @@ const App: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, noGit, i
   const [filterActive, setFilterActive] = useState(!!initialFilter);
   const [filterQuery, setFilterQuery] = useState(initialFilter || '');
 
-  // Worktree state
-  const [worktrees, setWorktrees] = useState<Worktree[]>([]);
-  const [activeWorktreeId, setActiveWorktreeId] = useState<string | null>(null);
-  const [activeRootPath, setActiveRootPath] = useState<string>(cwd);
+  // Active worktree state (can change via user actions)
+  const [activeWorktreeId, setActiveWorktreeId] = useState<string | null>(initialActiveWorktreeId);
+  const [activeRootPath, setActiveRootPath] = useState<string>(initialActiveRootPath);
   const [isWorktreePanelOpen, setIsWorktreePanelOpen] = useState(false);
+
+  // Sync active worktree/path from lifecycle on initialization
+  useEffect(() => {
+    if (lifecycleStatus === 'ready') {
+      setActiveWorktreeId(initialActiveWorktreeId);
+      setActiveRootPath(initialActiveRootPath);
+    }
+  }, [lifecycleStatus, initialActiveWorktreeId, initialActiveRootPath]);
 
   // File watcher ref
   const watcherRef = useRef<FileWatcher | null>(null);
@@ -84,46 +113,16 @@ const App: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, noGit, i
   const [contextMenuTarget, setContextMenuTarget] = useState<string>('');
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  // Cleanup watcher on unmount
   useEffect(() => {
-    let isMounted = true;
-
-    const initializeApp = async () => {
-      try {
-        const loadedWorktrees = await getWorktrees(cwd);
-        if (!isMounted) return;
-
-        setWorktrees(loadedWorktrees);
-
-        if (loadedWorktrees.length > 0) {
-          const current = getCurrentWorktree(cwd, loadedWorktrees);
-          if (current) {
-            setActiveWorktreeId(current.id);
-          } else {
-            setActiveWorktreeId(loadedWorktrees[0].id);
-          }
-        }
-      } catch (error) {
-        if (!isMounted) return;
-        console.debug('Could not load worktrees:', error);
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    initializeApp();
-
     return () => {
-      isMounted = false;
-      // Cleanup watcher on unmount
       if (watcherRef.current) {
         void watcherRef.current.stop().catch((err) => {
           console.error('Error stopping watcher on unmount:', err);
         });
       }
     };
-  }, [cwd]);
+  }, []);
 
   // Auto-dismiss notifications after 3 seconds
   useEffect(() => {
@@ -431,14 +430,36 @@ const App: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, noGit, i
     },
   });
 
-  // Show loading screen only during initial load (not for incremental refreshes)
-  if (loading || (treeLoading && fileTree.length === 0)) {
+  // Show loading screen during lifecycle initialization
+  if (lifecycleStatus === 'initializing') {
     return (
       <Box flexDirection="column" padding={1}>
         <Text>Loading Yellowwood...</Text>
+        <Text dimColor>Initializing configuration and file tree for {cwd}</Text>
       </Box>
     );
   }
+
+  // Show error screen if lifecycle failed
+  if (lifecycleStatus === 'error') {
+    return (
+      <Box flexDirection="column" padding={1} borderStyle="round" borderColor="red">
+        <Text bold color="red">
+          Initialization Error
+        </Text>
+        <Text> </Text>
+        <Text>Failed to initialize Yellowwood:</Text>
+        <Text italic color="yellow">
+          {lifecycleError?.message || 'Unknown error'}
+        </Text>
+        <Text> </Text>
+        <Text dimColor>Press Ctrl+C to exit</Text>
+      </Box>
+    );
+  }
+
+  // Show loading indicator for incremental tree refreshes (but keep UI visible)
+  const showTreeLoading = treeLoading && fileTree.length === 0;
 
   return (
     <Box flexDirection="column" height="100%">
@@ -512,6 +533,15 @@ const App: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, noGit, i
         />
       )}
     </Box>
+  );
+};
+
+// Wrapper component with error boundary
+const App: React.FC<AppProps> = (props) => {
+  return (
+    <AppErrorBoundary>
+      <AppContent {...props} />
+    </AppErrorBoundary>
   );
 };
 
