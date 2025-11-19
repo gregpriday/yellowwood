@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { loadConfig } from '../utils/config.js';
 import { getWorktrees, getCurrentWorktree } from '../utils/worktree.js';
+import { loadInitialState } from '../utils/state.js';
 import type { YellowwoodConfig, Worktree, Notification } from '../types/index.js';
 import { DEFAULT_CONFIG } from '../types/index.js';
 
@@ -12,6 +13,8 @@ export interface LifecycleState {
   worktrees: Worktree[];
   activeWorktreeId: string | null;
   activeRootPath: string;
+  initialSelectedPath: string | null;
+  initialExpandedFolders: Set<string>;
   error: Error | null;
 }
 
@@ -33,6 +36,7 @@ export interface UseAppLifecycleReturn extends LifecycleState {
  * Orchestrates:
  * - Configuration loading (if not provided)
  * - Worktree discovery
+ * - Initial state loading (selected path, expanded folders)
  * - Initial path determination
  * - Error handling and recovery
  *
@@ -51,6 +55,8 @@ export function useAppLifecycle({
     worktrees: [],
     activeWorktreeId: null,
     activeRootPath: cwd,
+    initialSelectedPath: null,
+    initialExpandedFolders: new Set<string>(),
     error: null,
   });
 
@@ -90,26 +96,31 @@ export function useAppLifecycle({
         }
       }
 
-      // Step 2: Discover worktrees
+      // Step 2: Load initial state (includes worktree discovery)
       let worktrees: Worktree[] = [];
       let activeWorktreeId: string | null = null;
       let activeRootPath = cwd;
+      let initialSelectedPath: string | null = null;
+      let initialExpandedFolders = new Set<string>();
 
       try {
-        worktrees = await getWorktrees(cwd);
+        // Load initial state which detects worktree and restores session
+        const initialState = await loadInitialState(cwd, config!);
         if (!isMountedRef.current) return;
 
-        if (worktrees.length > 0) {
-          const current = getCurrentWorktree(cwd, worktrees);
-          if (current) {
-            activeWorktreeId = current.id;
-            activeRootPath = current.path;
-          } else {
-            // Default to first worktree
-            activeWorktreeId = worktrees[0].id;
-            activeRootPath = worktrees[0].path;
-          }
+        // Extract worktree information
+        if (initialState.worktree) {
+          // Re-fetch all worktrees for the list
+          worktrees = await getWorktrees(cwd);
+          if (!isMountedRef.current) return;
+
+          activeWorktreeId = initialState.worktree.id;
+          activeRootPath = initialState.worktree.path;
         }
+
+        // Store initial state for App to use
+        initialSelectedPath = initialState.selectedPath;
+        initialExpandedFolders = initialState.expandedFolders;
       } catch (error) {
         // Check if this is a truly catastrophic error (not just "not a git repo")
         const errorMessage = (error as Error).message;
@@ -117,8 +128,8 @@ export function useAppLifecycle({
           // Re-throw catastrophic errors - they should fail initialization
           throw error;
         }
-        // Worktree discovery is optional - not being in a git repo is OK
-        console.debug('Could not load worktrees:', error);
+        // State loading is optional - not being in a git repo is OK
+        console.debug('Could not load initial state:', error);
         if (!isMountedRef.current) return;
       }
 
@@ -130,6 +141,8 @@ export function useAppLifecycle({
           worktrees,
           activeWorktreeId,
           activeRootPath,
+          initialSelectedPath,
+          initialExpandedFolders,
           error: null,
         });
       }
