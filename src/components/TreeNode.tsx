@@ -13,15 +13,15 @@ interface TreeNodeProps {
 }
 
 /**
- * Map GitStatus to single-character marker
+ * Map GitStatus to colored dot/symbol marker
  */
 function mapGitStatusMarker(status: GitStatus): string {
   const markers: Record<GitStatus, string> = {
-    modified: 'M',
-    added: 'A',
-    deleted: 'D',
-    untracked: 'U',
-    ignored: 'I',
+    modified: '●', // Yellow dot for modified
+    added: '+',    // Green plus for added
+    deleted: '×',  // Red X for deleted
+    untracked: '○', // Hollow dot for untracked
+    ignored: '◌',  // Lighter hollow dot for ignored
   };
   return markers[status];
 }

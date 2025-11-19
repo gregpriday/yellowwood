@@ -8,6 +8,8 @@ export interface FlattenedNode extends TreeNode {
   depth: number;
   /** Index in the flattened array */
   index: number;
+  /** Indicates if node is last sibling at each depth level (for tree guides) */
+  isLastSiblingAtDepth: boolean[];
 }
 
 /**
@@ -57,13 +59,27 @@ export function flattenVisibleTree(
   const result: FlattenedNode[] = [];
   let index = 0;
 
-  function traverse(nodeList: TreeNode[], currentDepth: number): void {
-    for (const node of nodeList) {
+  function traverse(
+    nodeList: TreeNode[],
+    currentDepth: number,
+    parentIsLastSiblingPath: boolean[] = [],
+  ): void {
+    for (let i = 0; i < nodeList.length; i++) {
+      const node = nodeList[i];
+      const isLastSibling = i === nodeList.length - 1;
+
+      // Build isLastSiblingAtDepth array for tree guides
+      const isLastSiblingAtDepth = [...parentIsLastSiblingPath];
+      if (currentDepth > 0) {
+        isLastSiblingAtDepth[currentDepth - 1] = isLastSibling;
+      }
+
       // Add current node with metadata
       const flatNode: FlattenedNode = {
         ...node,
         depth: currentDepth,
         index: result.length,
+        isLastSiblingAtDepth,
       };
       result.push(flatNode);
       index++;
@@ -75,7 +91,7 @@ export function flattenVisibleTree(
         node.children &&
         node.children.length > 0
       ) {
-        traverse(node.children, currentDepth + 1);
+        traverse(node.children, currentDepth + 1, isLastSiblingAtDepth);
       }
     }
   }

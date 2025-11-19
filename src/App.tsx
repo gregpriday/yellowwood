@@ -18,9 +18,10 @@ import { useAppLifecycle } from './hooks/useAppLifecycle.js';
 import { useViewportHeight } from './hooks/useViewportHeight.js';
 import { openFile } from './utils/fileOpener.js';
 import { copyFilePath } from './utils/clipboard.js';
+import clipboardy from 'clipboardy';
 import path from 'path';
 import { useGitStatus } from './hooks/useGitStatus.js';
-import { useProjectEmoji } from './hooks/useProjectEmoji.js';
+import { useProjectIdentity } from './hooks/useProjectIdentity.js';
 import { createFileWatcher, buildIgnorePatterns } from './utils/fileWatcher.js';
 import type { FileWatcher } from './utils/fileWatcher.js';
 import { saveSessionState } from './utils/state.js';
@@ -127,7 +128,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     config.refreshDebounce,
   );
 
-  const projectEmoji = useProjectEmoji(activeRootPath);
+  const projectIdentity = useProjectIdentity(activeRootPath);
 
   const refreshGitStatusRef = useRef(refreshGitStatus);
   refreshGitStatusRef.current = refreshGitStatus;
@@ -426,10 +427,14 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     if (!pathToString) return;
 
     try {
+      // Copy path with @ prefix
       await copyFilePath(pathToString, activeRootPath, false);
+      const copiedPath = await clipboardy.read();
+      await clipboardy.write(`@${copiedPath}`);
+
       setNotification({
         type: 'success',
-        message: 'Path copied to clipboard',
+        message: 'Path copied with @ prefix',
       });
     } catch (error) {
       setNotification({
@@ -636,7 +641,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         currentWorktree={currentWorktree}
         worktreeCount={worktrees.length}
         onWorktreeClick={() => setIsWorktreePanelOpen(true)}
-        projectEmoji={projectEmoji}
+        identity={projectIdentity}
       />
       <Box flexGrow={1}>
         <TreeView

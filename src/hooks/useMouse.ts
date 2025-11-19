@@ -116,27 +116,15 @@ export function useMouse(options: UseMouseOptions): UseMouseReturn {
         return;
       }
 
-      // Left-click behavior depends on node type and config
+      // Left-click behavior depends on node type
       if (event.button === 'left') {
         if (node.type === 'directory') {
           // Directories: always toggle expansion
           onToggle(node.path);
         } else {
-          // Files: 
-          // Check for modifiers for COPY action (Alt + Click)
-          // Or if we really want to force copy
-          if (onCopy && event.meta) { // Using meta (Alt) for Copy
-             onCopy(node.path);
-             return;
-          }
-
-          // Standard behavior: Select or Open
-          const action = config.ui?.leftClickAction || 'open';
-
-          if (action === 'open') {
-            onOpen(node.path);
-          } else {
-            onSelect(node.path);
+          // Files: always copy path with @ prefix
+          if (onCopy) {
+            onCopy(node.path);
           }
         }
       }

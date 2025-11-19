@@ -1,7 +1,9 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import Gradient from 'ink-gradient';
 import { relative } from 'node:path';
 import type { Worktree } from '../types/index.js';
+import type { ProjectIdentity } from '../services/emoji/cache.js';
 
 interface HeaderProps {
   cwd: string;
@@ -10,7 +12,7 @@ interface HeaderProps {
   currentWorktree?: Worktree | null;
   worktreeCount?: number;
   onWorktreeClick?: () => void;
-  projectEmoji?: string | null;
+  identity: ProjectIdentity;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,7 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentWorktree,
   worktreeCount = 0,
   onWorktreeClick,
-  projectEmoji,
+  identity,
 }) => {
   // Note: Keyboard handling for worktree actions (w/W keys) is delegated to
   // the global useKeyboard hook to avoid conflicts with the global keyboard contract
@@ -44,6 +46,10 @@ export const Header: React.FC<HeaderProps> = ({
       })()
     : cwd;
 
+  // Split path into breadcrumb segments
+  const pathSegments = displayPath.split('/').filter(Boolean);
+  const isRoot = displayPath === '/' || pathSegments.length === 0;
+
   // Truncate long branch names
   const maxBranchLength = 20;
   const truncatedBranchName = worktreeName.length > maxBranchLength
@@ -52,8 +58,12 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <Box borderStyle="single" paddingX={1}>
-      {projectEmoji ? <Text>{projectEmoji} </Text> : null}
-      <Text bold>Canopy</Text>
+      <Text>{identity.emoji} </Text>
+
+      {/* Dynamic Gradient and Title */}
+      <Gradient colors={[identity.gradientStart, identity.gradientEnd]}>
+        <Text bold>{identity.title}</Text>
+      </Gradient>
 
       {showWorktreeIndicator && (
         <>
@@ -71,7 +81,24 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       <Text dimColor> • </Text>
-      <Text>{displayPath}</Text>
+
+      {/* Breadcrumb path segments */}
+      {isRoot ? (
+        <Text color="blue">/</Text>
+      ) : (
+        <>
+          {pathSegments.map((segment, index) => (
+            <React.Fragment key={index}>
+              <Text color={index === pathSegments.length - 1 ? 'white' : 'blue'}>
+                {segment}
+              </Text>
+              {index < pathSegments.length - 1 && (
+                <Text dimColor> / </Text>
+              )}
+            </React.Fragment>
+          ))}
+        </>
+      )}
 
       {filterActive && (
         <>

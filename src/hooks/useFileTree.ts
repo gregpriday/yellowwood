@@ -203,24 +203,27 @@ export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
 
   // Refresh action
   const refresh = useCallback(async () => {
-    // Increment refresh ID to invalidate any in-flight refreshes
+    // 1. Increment ID to track this specific request
     const currentRefreshId = ++refreshIdRef.current;
 
-    setLoading(true);
-    try {
-      const newTree = await buildFileTree(rootPath, config);
+    // 2. DO NOT set loading to true (this causes flicker and might block UI updates)
+    // setLoading(true); 
 
-      // Only update state if this is still the latest refresh
+    try {
+      // 3. FORCE refresh is strictly TRUE here
+      const newTree = await buildFileTree(rootPath, config, true);
+
+      // 4. Safety check: only update if this is still the latest request
       if (currentRefreshId === refreshIdRef.current) {
-        setTree(newTree);
+        
+        // 5. FORCE update by creating a new array reference
+        setTree([...newTree]); 
+        
         setLoading(false);
       }
     } catch (error) {
       console.error('Failed to refresh tree:', error);
-
-      // Only update state if this is still the latest refresh
       if (currentRefreshId === refreshIdRef.current) {
-        setTree([]);
         setLoading(false);
       }
     }

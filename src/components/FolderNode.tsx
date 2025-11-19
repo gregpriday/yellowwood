@@ -1,9 +1,12 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { TreeNode as TreeNodeType, CanopyConfig, GitStatus } from '../types/index.js';
+import type { FlattenedNode } from '../utils/treeViewVirtualization.js';
+import { getFolderIcon } from '../utils/fileIcons.js';
+import { getTreeGuide } from '../utils/treeGuides.js';
 
 interface FolderNodeProps {
-  node: TreeNodeType;
+  node: TreeNodeType & Partial<FlattenedNode>;
   selected: boolean;
   config: CanopyConfig;
   mapGitStatusMarker: (status: GitStatus) => string;
@@ -21,11 +24,13 @@ export function FolderNode({
   mapGitStatusMarker,
   getNodeColor,
 }: FolderNodeProps): React.JSX.Element {
-  // Calculate indentation based on depth
-  const indent = ' '.repeat(node.depth * config.treeIndent);
+  // Get tree guide prefix
+  const treeGuide = node.isLastSiblingAtDepth
+    ? getTreeGuide(node.depth, node.isLastSiblingAtDepth, config.treeIndent)
+    : ' '.repeat(node.depth * config.treeIndent);
 
-  // Expansion icon based on folder state
-  const icon = node.expanded ? '\u25BC' : '\u25B6'; // � : �
+  // Get Nerd Font icon for folder
+  const icon = getFolderIcon(node.name, node.expanded || false);
 
   // Get git status marker if enabled
   const gitMarker =
@@ -39,10 +44,26 @@ export function FolderNode({
   // Determine if text should be dimmed (for deleted folders, but never dim selected items)
   const dimmed = !selected && node.gitStatus === 'deleted';
 
+  // For selected items, use inverted colors (background highlight)
+  if (selected) {
+    return (
+      <Box>
+        <Text color="gray" dimColor>{treeGuide}</Text>
+        <Box paddingX={1}>
+          <Text backgroundColor="blue" color="white" bold>
+            {icon} {node.name}{gitMarker}
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Non-selected items use standard colors
   return (
     <Box>
-      <Text color={color} dimColor={dimmed} bold={selected}>
-        {indent}{icon} {node.name}{gitMarker}
+      <Text color="gray" dimColor>{treeGuide}</Text>
+      <Text color={color} dimColor={dimmed} bold>
+        {icon} {node.name}{gitMarker}
       </Text>
     </Box>
   );
