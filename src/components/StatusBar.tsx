@@ -145,33 +145,7 @@ export const StatusBar = forwardRef<StatusBarRef, StatusBarProps>(({
     );
   }
 
-  // 3. Feedback Mode (CopyTree Status)
-  // This replaces stats and buttons entirely to show the status message
-  if (feedback) {
-    return (
-      <Box 
-        borderStyle="single" 
-        paddingX={1} 
-        // justifyContent="flex-start" // Align text to left
-      >
-        <Box flexDirection="column">
-           {/* We wrap in a Box to maintain vertical stability if needed, 
-               though simple Text usually suffices in Ink */}
-           <Text 
-             color={feedback.type === 'success' ? 'green' : 'red'}
-             wrap="truncate-end"
-           >
-            {feedback.type === 'success' ? '📎 ' : '❌ '}
-            {feedback.message}
-          </Text>
-           {/* Optional: Add an empty line of text if you need to force the 
-               height to match the 2-line stats view exactly, preventing layout shift.
-               <Text> </Text> 
-           */}
-        </Box>
-      </Box>
-    );
-  }
+
 
   // 4. Prepare Filter & Perf Elements (Moved up so they are available for the else block)
   const filterElements: React.JSX.Element[] = [];
