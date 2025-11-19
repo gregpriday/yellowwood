@@ -18,13 +18,19 @@ interface TreeViewProps {
   selectedPath: string;
   onSelect: (path: string) => void;
   config: YellowwoodConfig;
+  expandedPaths?: Set<string>; // Optional controlled expansion
+  onToggleExpand?: (path: string) => void; // Callback for expansion changes
+  disableKeyboard?: boolean; // Disable internal keyboard handlers when parent handles them
 }
 
 export const TreeView: React.FC<TreeViewProps> = ({
   fileTree,
   selectedPath,
   onSelect,
-  config
+  config,
+  expandedPaths: controlledExpandedPaths,
+  onToggleExpand,
+  disableKeyboard = false,
 }) => {
   const { stdout } = useStdout();
 
@@ -32,8 +38,10 @@ export const TreeView: React.FC<TreeViewProps> = ({
   const [viewportHeight, setViewportHeight] = useState(() => calculateViewportHeight());
   const [scrollOffset, setScrollOffset] = useState(0);
 
-  // Track expanded folders
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  // Track expanded folders (use controlled if provided, otherwise internal state)
+  const [internalExpandedPaths, setInternalExpandedPaths] = useState<Set<string>>(new Set());
+  const isControlledExpansion = controlledExpandedPaths != null && onToggleExpand != null;
+  const expandedPaths = isControlledExpansion ? controlledExpandedPaths : internalExpandedPaths;
 
   // Update viewport height on terminal resize
   useEffect(() => {
@@ -132,7 +140,12 @@ export const TreeView: React.FC<TreeViewProps> = ({
   const handleToggleExpand = useCallback(() => {
     const node = flattenedTree[cursorIndex];
     if (node && node.type === 'directory') {
-      setExpandedPaths((prev) => {
+      if (isControlledExpansion) {
+        onToggleExpand?.(node.path);
+        return;
+      }
+
+      setInternalExpandedPaths((prev) => {
         const newSet = new Set(prev);
         if (newSet.has(node.path)) {
           newSet.delete(node.path);
@@ -142,10 +155,15 @@ export const TreeView: React.FC<TreeViewProps> = ({
         return newSet;
       });
     }
-  }, [cursorIndex, flattenedTree]);
+  }, [cursorIndex, flattenedTree, isControlledExpansion, onToggleExpand]);
 
   const handleToggle = useCallback((path: string) => {
-    setExpandedPaths((prev) => {
+    if (isControlledExpansion) {
+      onToggleExpand?.(path);
+      return;
+    }
+
+    setInternalExpandedPaths((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(path)) {
         newSet.delete(path);
@@ -154,14 +172,14 @@ export const TreeView: React.FC<TreeViewProps> = ({
       }
       return newSet;
     });
-  }, []);
+  }, [isControlledExpansion, onToggleExpand]);
 
   const handleScrollChange = useCallback((newOffset: number) => {
     setScrollOffset(newOffset);
   }, []);
 
-  // Wire up keyboard navigation
-  useKeyboard({
+  // Wire up keyboard navigation (only if not disabled)
+  useKeyboard(disableKeyboard ? {} : {
     onNavigateUp: handleNavigateUp,
     onNavigateDown: handleNavigateDown,
     onPageUp: handlePageUp,

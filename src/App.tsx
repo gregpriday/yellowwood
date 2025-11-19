@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { Header } from './components/Header.js';
 import { TreeView } from './components/TreeView.js';
@@ -11,12 +11,13 @@ import type { YellowwoodConfig, TreeNode, Notification, Worktree } from './types
 import { executeCommand } from './commands/index.js';
 import type { CommandContext } from './commands/index.js';
 import { useKeyboard } from './hooks/useKeyboard.js';
+import { useFileTree } from './hooks/useFileTree.js';
 import { getWorktrees, getCurrentWorktree } from './utils/worktree.js';
 import { openFile } from './utils/fileOpener.js';
 import { copyFilePath } from './utils/clipboard.js';
 import path from 'path';
 import { useGitStatus } from './hooks/useGitStatus.js';
-import { switchWorktree } from './utils/worktreeSwitch.js';
+import { createFileWatcher, buildIgnorePatterns } from './utils/fileWatcher.js';
 import type { FileWatcher } from './utils/fileWatcher.js';
 
 interface AppProps {
@@ -25,9 +26,6 @@ interface AppProps {
 
 const App: React.FC<AppProps> = ({ cwd }) => {
   const [config] = useState<YellowwoodConfig>(DEFAULT_CONFIG);
-  const [fileTree, setFileTree] = useState<TreeNode[]>([]);
-  const [originalFileTree, setOriginalFileTree] = useState<TreeNode[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string>('');
   const [notification, setNotification] = useState<Notification | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -58,6 +56,23 @@ const App: React.FC<AppProps> = ({ cwd }) => {
 
   const refreshGitStatusRef = useRef(refreshGitStatus);
   refreshGitStatusRef.current = refreshGitStatus;
+
+  // File tree hook - manages tree state, expansion, selection, filtering
+  const {
+    tree: fileTree,
+    rawTree,
+    expandedFolders,
+    selectedPath,
+    loading: treeLoading,
+    selectPath,
+    toggleFolder,
+    refresh: refreshTree,
+  } = useFileTree({
+    rootPath: activeRootPath,
+    config,
+    filterQuery: filterActive ? filterQuery : null,
+    gitStatusMap: gitStatus,
+  });
 
   // Context menu state (from PR #73)
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
@@ -98,7 +113,9 @@ const App: React.FC<AppProps> = ({ cwd }) => {
       isMounted = false;
       // Cleanup watcher on unmount
       if (watcherRef.current) {
-        watcherRef.current.stop();
+        void watcherRef.current.stop().catch((err) => {
+          console.error('Error stopping watcher on unmount:', err);
+        });
       }
     };
   }, [cwd]);
@@ -116,19 +133,78 @@ const App: React.FC<AppProps> = ({ cwd }) => {
   // Derive current worktree from activeWorktreeId
   const currentWorktree = worktrees.find(wt => wt.id === activeWorktreeId) || null;
 
-  // Keep originalFileTree in sync with fileTree when filter is not active
-  useEffect(() => {
-    if (!filterActive && fileTree.length > 0) {
-      setOriginalFileTree(fileTree);
-    }
-  }, [filterActive, fileTree]);
+  // Calculate modified count from git status
+  const modifiedCount = useMemo(() => {
+    return Array.from(gitStatus.values()).filter(
+      status => status === 'modified' || status === 'added' || status === 'deleted'
+    ).length;
+  }, [gitStatus]);
 
-  // Restore original tree when filter is cleared
+  // File watcher lifecycle - start/stop based on activeRootPath
   useEffect(() => {
-    if (!filterActive && originalFileTree.length > 0) {
-      setFileTree(originalFileTree);
+    // Stop old watcher if exists
+    if (watcherRef.current) {
+      void watcherRef.current.stop().catch((err) => {
+        console.error('Error stopping watcher:', err);
+      });
+      watcherRef.current = null;
     }
-  }, [filterActive, originalFileTree]);
+
+    // Create and start new watcher for current root
+    try {
+      const watcher = createFileWatcher(activeRootPath, {
+        ignored: buildIgnorePatterns(config.customIgnores || []),
+        debounce: config.refreshDebounce,
+        onAdd: () => {
+          refreshTree();
+          refreshGitStatusRef.current();
+        },
+        onChange: () => {
+          refreshTree();
+          refreshGitStatusRef.current();
+        },
+        onUnlink: () => {
+          refreshTree();
+          refreshGitStatusRef.current();
+        },
+        onAddDir: () => {
+          refreshTree();
+          refreshGitStatusRef.current();
+        },
+        onUnlinkDir: () => {
+          refreshTree();
+          refreshGitStatusRef.current();
+        },
+        onError: (error) => {
+          setNotification({
+            type: 'error',
+            message: `File watcher error: ${error.message}`,
+          });
+        },
+      });
+
+      watcher.start();
+      watcherRef.current = watcher;
+    } catch (error) {
+      // Watcher creation/start failed - notify user but don't crash
+      console.error('Failed to start file watcher:', error);
+      setNotification({
+        type: 'warning',
+        message: `File watcher disabled: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      });
+      watcherRef.current = null;
+    }
+
+    // Cleanup on unmount or path change
+    return () => {
+      if (watcherRef.current) {
+        void watcherRef.current.stop().catch((err) => {
+          console.error('Error stopping watcher during cleanup:', err);
+        });
+        watcherRef.current = null;
+      }
+    };
+  }, [activeRootPath, config, refreshTree]);
 
   // Handle command bar open/close
   const handleOpenCommandBar = () => {
@@ -146,7 +222,6 @@ const App: React.FC<AppProps> = ({ cwd }) => {
     if (filterActive) {
       setFilterActive(false);
       setFilterQuery('');
-      setFileTree(originalFileTree);
       setNotification({
         type: 'info',
         message: 'Filter cleared',
@@ -185,33 +260,23 @@ const App: React.FC<AppProps> = ({ cwd }) => {
   // Handle worktree switching
   const handleSwitchWorktree = async (targetWorktree: Worktree) => {
     try {
-      // Clear git status before switching (from PR #75)
+      // Clear git status before switching
       clearGitStatus();
 
-      const result = await switchWorktree({
-        targetWorktree,
-        currentWatcher: watcherRef.current, // Pass current watcher for cleanup
-        currentTree: fileTree,
-        selectedPath,
-        config,
-        onFileChange: {
-          // Trigger git refresh on file changes (from PR #75)
-          onAdd: () => refreshGitStatusRef.current(),
-          onChange: () => refreshGitStatusRef.current(),
-          onUnlink: () => refreshGitStatusRef.current(),
-        },
-      });
+      // Stop current watcher (new one will be created by useEffect when activeRootPath changes)
+      if (watcherRef.current) {
+        await watcherRef.current.stop();
+        watcherRef.current = null;
+      }
 
-      // Update state with new tree, selection, and watcher
-      setFileTree(result.tree);
-      setOriginalFileTree(result.tree);
-      setSelectedPath(result.selectedPath || '');
+      // Update active worktree and root path
+      // This triggers useFileTree and watcher useEffects to rebuild for new path
       setActiveWorktreeId(targetWorktree.id);
-      setActiveRootPath(targetWorktree.path); // Update active root path for git status (from PR #75)
-      watcherRef.current = result.watcher; // Store new watcher in ref
+      setActiveRootPath(targetWorktree.path);
 
-      // Refresh git status after switching (from PR #75)
-      refreshGitStatus();
+      // Clear any active filter when switching
+      setFilterActive(false);
+      setFilterQuery('');
 
       // Close panel and show success notification
       setIsWorktreePanelOpen(false);
@@ -237,14 +302,11 @@ const App: React.FC<AppProps> = ({ cwd }) => {
     setCommandHistory(prev => [input, ...prev.filter(cmd => cmd !== input)].slice(0, 50));
 
     // Build command context
-    // Use the current originalFileTree if we have one, otherwise use fileTree
-    const treeForCommands = originalFileTree.length > 0 ? originalFileTree : fileTree;
-
     const context: CommandContext = {
       state: {
         fileTree,
-        expandedFolders: new Set(),
-        selectedPath,
+        expandedFolders,
+        selectedPath: selectedPath || '',
         cursorPosition: 0,
         showPreview: false,
         showHelp: false,
@@ -263,7 +325,7 @@ const App: React.FC<AppProps> = ({ cwd }) => {
         worktrees,
         activeWorktreeId,
       },
-      originalFileTree: treeForCommands,
+      originalFileTree: rawTree,
       setFilterActive: (active: boolean) => {
         setFilterActive(active);
         if (!active) {
@@ -271,8 +333,9 @@ const App: React.FC<AppProps> = ({ cwd }) => {
         }
       },
       setFilterQuery,
-      setFileTree: (tree: TreeNode[]) => {
-        setFileTree(tree);
+      setFileTree: () => {
+        // No-op: filtering is now handled by useFileTree hook
+        // Commands should use setFilterQuery and setFilterActive instead
       },
       notify: setNotification,
       addToHistory: (cmd: string) => {
@@ -347,9 +410,19 @@ const App: React.FC<AppProps> = ({ cwd }) => {
     onOpenFile: handleOpenSelectedFile,
     onCopyPath: handleCopySelectedPath,
     onOpenContextMenu: handleOpenContextMenu,
+    onToggleExpand: () => {
+      if (selectedPath) {
+        toggleFolder(selectedPath);
+      }
+    },
+    onRefresh: () => {
+      refreshTree();
+      refreshGitStatus();
+    },
   });
 
-  if (loading) {
+  // Show loading screen only during initial load (not for incremental refreshes)
+  if (loading || (treeLoading && fileTree.length === 0)) {
     return (
       <Box flexDirection="column" padding={1}>
         <Text>Loading Yellowwood...</Text>
@@ -370,15 +443,19 @@ const App: React.FC<AppProps> = ({ cwd }) => {
       <Box flexGrow={1}>
         <TreeView
           fileTree={fileTree}
-          selectedPath={selectedPath}
-          onSelect={setSelectedPath}
+          selectedPath={selectedPath || ''}
+          onSelect={selectPath}
           config={config}
+          expandedPaths={expandedFolders}
+          onToggleExpand={toggleFolder}
+          disableKeyboard={true}
         />
       </Box>
       <StatusBar
         notification={notification}
         fileCount={fileTree.length}
-        modifiedCount={0}
+        modifiedCount={modifiedCount}
+        filterQuery={filterActive ? filterQuery : null}
       />
       <CommandBar
         active={commandBarActive}
