@@ -4,12 +4,14 @@ import { Header } from './components/Header.js';
 import { TreeView } from './components/TreeView.js';
 import { StatusBar } from './components/StatusBar.js';
 import { CommandBar } from './components/CommandBar.js';
+import { WorktreePanel } from './components/WorktreePanel.js';
 import { DEFAULT_CONFIG } from './types/index.js';
 import type { YellowwoodConfig, TreeNode, Notification, Worktree } from './types/index.js';
 import { executeCommand } from './commands/index.js';
 import type { CommandContext } from './commands/index.js';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import { getWorktrees, getCurrentWorktree } from './utils/worktree.js';
+import { switchWorktree } from './utils/worktreeSwitch.js';
 
 interface AppProps {
   cwd: string;
@@ -35,6 +37,8 @@ const App: React.FC<AppProps> = ({ cwd }) => {
   // Worktree state
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [activeWorktreeId, setActiveWorktreeId] = useState<string | null>(null);
+  const [isWorktreePanelOpen, setIsWorktreePanelOpen] = useState(false);
+  const [currentWatcher, setCurrentWatcher] = useState<any>(null); // FileWatcher from worktreeSwitch
 
   useEffect(() => {
     let isMounted = true;
@@ -68,8 +72,12 @@ const App: React.FC<AppProps> = ({ cwd }) => {
 
     return () => {
       isMounted = false;
+      // Cleanup watcher on unmount
+      if (currentWatcher) {
+        currentWatcher.stop();
+      }
     };
-  }, [cwd]);
+  }, [cwd, currentWatcher]);
 
   // Auto-dismiss notifications after 3 seconds
   useEffect(() => {
@@ -80,6 +88,9 @@ const App: React.FC<AppProps> = ({ cwd }) => {
       return () => clearTimeout(timer);
     }
   }, [notification]);
+
+  // Derive current worktree from activeWorktreeId
+  const currentWorktree = worktrees.find(wt => wt.id === activeWorktreeId) || null;
 
   // Keep originalFileTree in sync with fileTree when filter is not active
   useEffect(() => {
@@ -119,6 +130,68 @@ const App: React.FC<AppProps> = ({ cwd }) => {
     } else if (commandBarActive) {
       // ESC in command bar closes it
       handleCloseCommandBar();
+    } else if (isWorktreePanelOpen) {
+      // ESC in worktree panel closes it
+      setIsWorktreePanelOpen(false);
+    }
+  };
+
+  // Handle cycling to next worktree (w key)
+  const handleNextWorktree = () => {
+    // No-op if no worktrees or only one worktree
+    if (worktrees.length <= 1) {
+      return;
+    }
+
+    // Find current index
+    const currentIndex = worktrees.findIndex(wt => wt.id === activeWorktreeId);
+
+    // Calculate next index with wrap-around
+    const nextIndex = currentIndex >= 0 && currentIndex < worktrees.length - 1
+      ? currentIndex + 1
+      : 0;
+
+    // Switch to next worktree
+    const nextWorktree = worktrees[nextIndex];
+    if (nextWorktree) {
+      handleSwitchWorktree(nextWorktree);
+    }
+  };
+
+  // Handle worktree switching
+  const handleSwitchWorktree = async (targetWorktree: Worktree) => {
+    try {
+      const result = await switchWorktree({
+        targetWorktree,
+        currentWatcher, // Pass current watcher for cleanup
+        currentTree: fileTree,
+        selectedPath,
+        config,
+        onFileChange: {
+          // File change handlers not yet implemented
+          // These will be wired when file watcher state is added to App
+        },
+      });
+
+      // Update state with new tree, selection, and watcher
+      setFileTree(result.tree);
+      setOriginalFileTree(result.tree);
+      setSelectedPath(result.selectedPath || '');
+      setActiveWorktreeId(targetWorktree.id);
+      setCurrentWatcher(result.watcher); // Store new watcher
+
+      // Close panel and show success notification
+      setIsWorktreePanelOpen(false);
+      setNotification({
+        type: 'success',
+        message: `Switched to ${targetWorktree.branch || targetWorktree.name}`,
+      });
+    } catch (error) {
+      // Keep panel open on error, show error notification
+      setNotification({
+        type: 'error',
+        message: `Failed to switch worktree: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      });
     }
   };
 
@@ -174,11 +247,7 @@ const App: React.FC<AppProps> = ({ cwd }) => {
       },
       worktrees,
       activeWorktreeId,
-      switchToWorktree: async (targetWorktree: Worktree) => {
-        // For now, just update the active worktree ID
-        // Full implementation with file watcher and tree rebuilding would go here
-        setActiveWorktreeId(targetWorktree.id);
-      },
+      switchToWorktree: handleSwitchWorktree,
     };
 
     // Execute command
@@ -197,6 +266,8 @@ const App: React.FC<AppProps> = ({ cwd }) => {
   useKeyboard({
     onOpenCommandBar: handleOpenCommandBar,
     onClearFilter: handleClearFilter,
+    onNextWorktree: handleNextWorktree,
+    onOpenWorktreePanel: () => setIsWorktreePanelOpen(true),
   });
 
   if (loading) {
@@ -209,7 +280,14 @@ const App: React.FC<AppProps> = ({ cwd }) => {
 
   return (
     <Box flexDirection="column" height="100%">
-      <Header cwd={cwd} filterActive={filterActive} filterQuery={filterQuery} />
+      <Header
+        cwd={cwd}
+        filterActive={filterActive}
+        filterQuery={filterQuery}
+        currentWorktree={currentWorktree}
+        worktreeCount={worktrees.length}
+        onWorktreeClick={() => setIsWorktreePanelOpen(true)}
+      />
       <Box flexGrow={1}>
         <TreeView
           fileTree={fileTree}
@@ -231,6 +309,19 @@ const App: React.FC<AppProps> = ({ cwd }) => {
         onSubmit={handleCommandSubmit}
         onCancel={handleCloseCommandBar}
       />
+      {isWorktreePanelOpen && (
+        <WorktreePanel
+          worktrees={worktrees}
+          activeWorktreeId={activeWorktreeId}
+          onSelect={(worktreeId) => {
+            const targetWorktree = worktrees.find(wt => wt.id === worktreeId);
+            if (targetWorktree) {
+              handleSwitchWorktree(targetWorktree);
+            }
+          }}
+          onClose={() => setIsWorktreePanelOpen(false)}
+        />
+      )}
     </Box>
   );
 };
