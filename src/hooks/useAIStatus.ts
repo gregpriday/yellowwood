@@ -77,12 +77,12 @@ export function useAIStatus(rootPath: string, gitStatusMap: Map<string, GitStatu
             if (newDiff !== currentDiffRef.current || !hasAnalyzedRef.current) {
                 currentDiffRef.current = newDiff;
                 logDebug('schedule: diff-updated', { diffLength: newDiff.length });
-                
+
                 // Clear any existing pending analysis
                 if (timerRef.current) clearTimeout(timerRef.current);
 
-                // Apply a small debounce so startup feels responsive without spamming the API.
-                const delay = 2000;
+                // On first analysis (startup), run immediately. For subsequent updates, use 30s debounce.
+                const delay = hasAnalyzedRef.current ? 30000 : 0;
 
                 timerRef.current = setTimeout(async () => {
                     setIsAnalyzing(true);
