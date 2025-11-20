@@ -5,7 +5,6 @@ import { perfMonitor } from '../utils/perfMetrics.js';
 import { ActionButton } from './StatusBar/ActionButton.js';
 import { ActionGroup } from './StatusBar/ActionGroup.js';
 import { InlineInput } from './StatusBar/InlineInput.js';
-import { runCopyTree } from '../utils/copytree.js';
 import { useTerminalMouse } from '../hooks/useTerminalMouse.js';
 import { events } from '../services/events.js'; // Import event bus
 import type { AIStatus } from '../services/ai/index.js';
@@ -55,7 +54,6 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   aiStatus,
   isAnalyzing,
 }) => {
-  const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [input, setInput] = useState('');
   const [idleMessage, setIdleMessage] = useState<string>(() =>
     IDLE_MESSAGES[Math.floor(Math.random() * IDLE_MESSAGES.length)]
@@ -63,15 +61,6 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   const [lastIdleState, setLastIdleState] = useState(false);
   const { stdout } = useStdout();
   const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY?.trim());
-
-  useEffect(() => {
-    if (feedback) {
-      const timer = setTimeout(() => {
-        setFeedback(null);
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [feedback]);
 
   // Pick a new random idle message when transitioning to idle state
   useEffect(() => {
@@ -85,50 +74,18 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     setLastIdleState(isCurrentlyIdle);
   }, [isAnalyzing, aiStatus, lastIdleState]);
 
-  // Subscribe to event bus for copy-tree requests
-  useEffect(() => {
-    return events.on('file:copy-tree', async (payload) => {
-       // If payload.rootPath is provided, use it, otherwise use activeRootPath
-       const targetPath = payload.rootPath || activeRootPath;
-       // We can call the same handleCopyTree function logic here
-       // but since it relies on state/props, we'll just call the function directly.
-       // Ideally, we'd extract the logic, but calling the internal function is fine.
-       // Since handleCopyTree is defined in the component scope, we can just call it.
-       await handleCopyTree(targetPath);
-    });
-  }, [activeRootPath]);
-
-  const handleCopyTree = async (rootPathOverride?: string) => {
-    try {
-      setFeedback({ message: '📎 Running CopyTree...', type: 'success' });
-      const target = rootPathOverride || activeRootPath;
-      const output = await runCopyTree(target);
-      
-      const lines = output
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-
-      let lastLine = lines.length > 0 ? lines[lines.length - 1] : '📎 Copied!';
-      // eslint-disable-next-line no-control-regex
-      lastLine = lastLine.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
-      setFeedback({ message: lastLine, type: 'success' });
-    } catch (error: any) {
-      const errorMsg = (error.message || 'Failed').split('\n')[0];
-      setFeedback({ message: errorMsg, type: 'error' });
-    }
-  };
-
+  // Mouse handler - emit event instead of executing directly
   useTerminalMouse({
-    enabled: !commandMode && !notification && !feedback && stdout !== undefined,
+    enabled: !commandMode && !notification && stdout !== undefined,
     onMouse: (event) => {
       if (event.button === 'left' && stdout) {
-        const buttonWidth = 16; 
-        const statusBarHeight = 5; 
+        const buttonWidth = 16;
+        const statusBarHeight = 5;
         const isBottom = event.y >= stdout.rows - statusBarHeight;
         const isRight = event.x >= stdout.columns - buttonWidth;
         if (isBottom && isRight) {
-          handleCopyTree();
+          // Emit event instead of calling handler directly
+          events.emit('file:copy-tree', { rootPath: activeRootPath });
         }
       }
     }
@@ -192,62 +149,53 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   }
 
   return (
-    <Box 
-      borderStyle="single" 
-      paddingX={1} 
-      justifyContent={feedback ? 'flex-start' : 'space-between'}
+    <Box
+      borderStyle="single"
+      paddingX={1}
+      justifyContent="space-between"
       width="100%"
     >
-      {feedback ? (
-        <Box height={3} width="100%" flexDirection="column" justifyContent="center">
-           <Text color={feedback.type === 'success' ? 'green' : 'red'} wrap="truncate-end">
-            {feedback.type === 'success' ? '' : '❌ '}
-            {feedback.message}
-          </Text>
-        </Box>
-      ) : (
-        // NORMAL MODE
-        <>
-          <Box flexDirection="column">
-            <Box>
-              <Text>{fileCount} files</Text>
-              {filterElements}
-              {perfElements}
-            </Box>
-            
-            <Box>
-              {modifiedCount > 0 ? (
-                <Text color="yellow">{modifiedCount} modified</Text>
-              ) : (
-                <Text dimColor>No changes</Text>
-              )}
-            </Box>
-
-            {/* Status / AI Line */}
-            <Box marginTop={0}>
-                 {isAnalyzing ? (
-                   <Text dimColor>🧠 Analyzing changes...</Text>
-                 ) : aiStatus ? (
-                   <Text color="magenta">{aiStatus.emoji} {aiStatus.description}</Text>
-                 ) : (
-                   <Box>
-                     <Text dimColor>{idleMessage}</Text>
-                     {!hasOpenAIKey && (
-                       <Text dimColor> [no OpenAI key]</Text>
-                     )}
-                   </Box>
-                 )}
-            </Box>
+      {/* NORMAL MODE */}
+      <>
+        <Box flexDirection="column">
+          <Box>
+            <Text>{fileCount} files</Text>
+            {filterElements}
+            {perfElements}
           </Box>
-          
-          <ActionGroup>
-            <ActionButton
-              label="CopyTree"
-              onAction={() => handleCopyTree()}
-            />
-          </ActionGroup>
-        </>
-      )}
+
+          <Box>
+            {modifiedCount > 0 ? (
+              <Text color="yellow">{modifiedCount} modified</Text>
+            ) : (
+              <Text dimColor>No changes</Text>
+            )}
+          </Box>
+
+          {/* Status / AI Line */}
+          <Box marginTop={0}>
+               {isAnalyzing ? (
+                 <Text dimColor>🧠 Analyzing changes...</Text>
+               ) : aiStatus ? (
+                 <Text color="magenta">{aiStatus.emoji} {aiStatus.description}</Text>
+               ) : (
+                 <Box>
+                   <Text dimColor>{idleMessage}</Text>
+                   {!hasOpenAIKey && (
+                     <Text dimColor> [no OpenAI key]</Text>
+                   )}
+                 </Box>
+               )}
+          </Box>
+        </Box>
+
+        <ActionGroup>
+          <ActionButton
+            label="CopyTree"
+            onAction={() => events.emit('file:copy-tree', { rootPath: activeRootPath })}
+          />
+        </ActionGroup>
+      </>
     </Box>
   );
 };

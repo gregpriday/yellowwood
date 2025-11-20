@@ -21,9 +21,15 @@ vi.mock('../src/utils/worktree.js', () => ({
 
 vi.mock('../src/utils/config.js');
 
+vi.mock('../src/utils/copytree.js', () => ({
+  runCopyTree: vi.fn().mockResolvedValue('Success\nCopied!'),
+}));
+
 import { openFile } from '../src/utils/fileOpener.js';
 import { copyFilePath } from '../src/utils/clipboard.js';
 import * as configUtils from '../src/utils/config.js';
+import { runCopyTree } from '../src/utils/copytree.js';
+import { events } from '../src/services/events.js';
 
 // Helper to wait for condition
 async function waitForCondition(fn: () => boolean, timeout = 1000): Promise<void> {
@@ -114,5 +120,92 @@ describe('App integration - file operations', () => {
 
     // Wait for lifecycle to complete
     await waitForCondition(() => !lastFrame()?.includes('Loading Canopy'));
+  });
+});
+
+describe('App integration - CopyTree centralized listener', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(configUtils.loadConfig).mockResolvedValue(DEFAULT_CONFIG);
+  });
+
+  it('useCopyTree hook is mounted and responds to file:copy-tree events', async () => {
+    const { lastFrame } = render(<App cwd="/test/project" />);
+
+    // Wait for initialization
+    await waitForCondition(() => !lastFrame()?.includes('Loading Canopy'));
+
+    // Clear any previous calls
+    vi.mocked(runCopyTree).mockClear();
+
+    // Create a promise to wait for notification
+    let notificationReceived = false;
+    const unsubscribe = events.on('ui:notify', (payload) => {
+      if (payload.type === 'success' && payload.message === 'Copied!') {
+        notificationReceived = true;
+      }
+    });
+
+    // Emit file:copy-tree event
+    events.emit('file:copy-tree', {});
+
+    // Wait for runCopyTree to be called
+    await waitForCondition(() => vi.mocked(runCopyTree).mock.calls.length > 0);
+
+    // Verify runCopyTree was called with the correct path
+    expect(runCopyTree).toHaveBeenCalledWith('/test/project');
+
+    // Wait for notification
+    await waitForCondition(() => notificationReceived);
+
+    unsubscribe();
+  });
+
+  it('uses custom rootPath from payload when provided', async () => {
+    const { lastFrame } = render(<App cwd="/test/default" />);
+
+    // Wait for initialization
+    await waitForCondition(() => !lastFrame()?.includes('Loading Canopy'));
+
+    // Clear any previous calls
+    vi.mocked(runCopyTree).mockClear();
+
+    // Emit file:copy-tree event with custom path
+    events.emit('file:copy-tree', { rootPath: '/custom/path' });
+
+    // Wait for runCopyTree to be called
+    await waitForCondition(() => vi.mocked(runCopyTree).mock.calls.length > 0);
+
+    // Verify runCopyTree was called with the custom path
+    expect(runCopyTree).toHaveBeenCalledWith('/custom/path');
+  });
+
+  it('emits error notification when CopyTree fails', async () => {
+    // Mock failure
+    vi.mocked(runCopyTree).mockRejectedValueOnce(new Error('CopyTree command failed'));
+
+    const { lastFrame } = render(<App cwd="/test/project" />);
+
+    // Wait for initialization
+    await waitForCondition(() => !lastFrame()?.includes('Loading Canopy'));
+
+    // Create a promise to wait for error notification
+    let errorReceived = false;
+    const unsubscribe = events.on('ui:notify', (payload) => {
+      if (payload.type === 'error') {
+        errorReceived = true;
+      }
+    });
+
+    // Emit file:copy-tree event
+    events.emit('file:copy-tree', {});
+
+    // Wait for error notification
+    await waitForCondition(() => errorReceived);
+
+    unsubscribe();
+
+    // App should not crash
+    expect(lastFrame()).toBeDefined();
   });
 });

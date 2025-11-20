@@ -20,6 +20,7 @@ import path from 'path';
 import { useGitStatus } from './hooks/useGitStatus.js';
 import { useAIStatus } from './hooks/useAIStatus.js';
 import { useProjectIdentity } from './hooks/useProjectIdentity.js';
+import { useCopyTree } from './hooks/useCopyTree.js';
 import { saveSessionState } from './utils/state.js';
 import { events, type ModalId, type ModalContextMap } from './services/events.js'; // Import event bus
 import { clearTerminalScreen } from './utils/terminal.js';
@@ -131,7 +132,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     if (lifecycleStatus === 'ready') {
       setActiveWorktreeId(initialActiveWorktreeId);
       setActiveRootPath(initialActiveRootPath);
-      events.emit('sys:ready', { cwd: activeRootPath });
+      events.emit('sys:ready', { cwd: initialActiveRootPath });
     }
   }, [lifecycleStatus, initialActiveWorktreeId, initialActiveRootPath]);
 
@@ -161,6 +162,9 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   const { status: aiStatus, isAnalyzing } = useAIStatus(activeRootPath, gitStatus, isGitLoading);
 
   const projectIdentity = useProjectIdentity(activeRootPath);
+
+  // Centralized CopyTree listener (survives StatusBar unmount/hide)
+  useCopyTree(activeRootPath);
 
   useWatcher(activeRootPath, effectiveConfig, !!noWatch);
 
