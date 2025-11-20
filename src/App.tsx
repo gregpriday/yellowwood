@@ -10,8 +10,7 @@ import { HelpModal } from './components/HelpModal.js';
 import { AppErrorBoundary } from './components/AppErrorBoundary.js';
 import { DEFAULT_CONFIG } from './types/index.js';
 import type { CanopyConfig, TreeNode, Notification, Worktree } from './types/index.js';
-import { executeCommand } from './commands/index.js';
-import type { CommandContext } from './commands/index.js';
+import { useCommandExecutor } from './hooks/useCommandExecutor.js';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import { useFileTree } from './hooks/useFileTree.js';
 import { useAppLifecycle } from './hooks/useAppLifecycle.js';
@@ -34,7 +33,6 @@ import {
   getRightArrowAction,
   getLeftArrowAction,
 } from './utils/treeNavigation.js';
-import { runCopyTree } from './utils/copytree.js';
 
 interface AppProps {
   cwd: string;
@@ -151,6 +149,15 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     gitStatusMap: gitStatus,
     initialSelectedPath,
     initialExpandedFolders,
+  });
+
+  const { execute } = useCommandExecutor({
+    cwd: activeRootPath,
+    selectedPath,
+    fileTree,
+    expandedPaths: expandedFolders,
+    setNotification,
+    refreshTree
   });
 
   // Stable reference for refreshTree to prevent watcher recreation
@@ -349,67 +356,9 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   // Execute command from status bar input
   const handleCommandSubmit = async (input: string) => {
     setCommandMode(false);
-
     setCommandHistory(prev => [input, ...prev.filter(cmd => cmd !== input)].slice(0, 50));
 
-    // Handle /copy alias specifically if needed, or let executeCommand handle it if mapped
-    if (input === '/copy' || input === '/cp') {
-      try {
-        setNotification({ type: 'info', message: 'Running copytree...' });
-        const output = await runCopyTree(activeRootPath);
-        setNotification({ type: 'success', message: output });
-      } catch (error: any) {
-        setNotification({ type: 'error', message: error.message });
-      }
-      return;
-    }
-
-    const context: CommandContext = {
-      state: {
-        fileTree,
-        expandedFolders,
-        selectedPath: selectedPath || '',
-        cursorPosition: 0,
-        showPreview: false,
-        showHelp: showHelpModal,
-        contextMenuOpen: contextMenuOpen,
-        contextMenuPosition,
-        filterActive,
-        filterQuery,
-        filteredPaths: [],
-        gitStatus,
-        gitEnabled,
-        notification,
-        commandBarActive: commandMode,
-        commandBarInput: input,
-        commandHistory,
-        config,
-        worktrees,
-        activeWorktreeId,
-      },
-      originalFileTree: rawTree,
-      setFilterActive: (active: boolean) => {
-        setFilterActive(active);
-        if (!active) {
-          setFilterQuery('');
-        }
-      },
-      setFilterQuery,
-      setFileTree: () => {},
-      notify: setNotification,
-      addToHistory: (cmd: string) => {
-        setCommandHistory(prev => [cmd, ...prev.filter(c => c !== cmd)].slice(0, 50));
-      },
-      worktrees,
-      activeWorktreeId,
-      switchToWorktree: handleSwitchWorktree,
-    };
-
-    const result = await executeCommand(input, context);
-
-    if (result.notification) {
-      setNotification(result.notification);
-    }
+    await execute(input);
   };
 
   const handleOpenSelectedFile = async () => {
