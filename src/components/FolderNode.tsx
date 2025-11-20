@@ -3,7 +3,6 @@ import { Box, Text } from 'ink';
 import type { TreeNode as TreeNodeType, CanopyConfig, GitStatus } from '../types/index.js';
 import type { FlattenedNode } from '../utils/treeViewVirtualization.js';
 import { getFolderIcon } from '../utils/fileIcons.js';
-import { getTreeGuide } from '../utils/treeGuides.js';
 
 interface FolderNodeProps {
   node: TreeNodeType & Partial<FlattenedNode>;
@@ -25,9 +24,7 @@ export function FolderNode({
   getNodeColor,
 }: FolderNodeProps): React.JSX.Element {
   // Get tree guide prefix
-  const treeGuide = node.isLastSiblingAtDepth
-    ? getTreeGuide(node.depth, node.isLastSiblingAtDepth, config.treeIndent)
-    : ' '.repeat(node.depth * config.treeIndent);
+  const treeGuide = ' '.repeat(node.depth * config.treeIndent);
 
   // Get Nerd Font icon for folder
   const icon = getFolderIcon(node.name, node.expanded || false);

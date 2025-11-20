@@ -25,7 +25,6 @@ import { useProjectIdentity } from './hooks/useProjectIdentity.js';
 import { createFileWatcher, buildIgnorePatterns } from './utils/fileWatcher.js';
 import type { FileWatcher } from './utils/fileWatcher.js';
 import { saveSessionState } from './utils/state.js';
-import { trace } from './utils/runtimeLogger.js';
 import {
   createFlattenedTree,
   moveSelection,
@@ -48,13 +47,15 @@ interface AppProps {
 const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, noGit, initialFilter }) => {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const [height, setHeight] = useState(stdout?.rows || 24);
+  // Fix: Subtract 1 to prevent terminal auto-scrolling on render
+  const [height, setHeight] = useState((stdout?.rows || 24) - 1);
 
   useEffect(() => {
     if (!stdout) return;
     
     const handleResize = () => {
-      setHeight(stdout.rows);
+      // Fix: Subtract 1 on resize as well
+      setHeight(stdout.rows - 1);
     };
 
     stdout.on('resize', handleResize);
@@ -206,15 +207,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   }, [gitStatus]);
 
   useEffect(() => {
-    trace('App', 'Watcher useEffect triggered', {
-      activeRootPath,
-      refreshDebounce: config.refreshDebounce,
-      noWatch,
-      hasExistingWatcher: !!watcherRef.current,
-    });
-
     if (watcherRef.current) {
-      trace('App', 'Stopping existing watcher');
       void watcherRef.current.stop().catch((err) => {
         console.error('Error stopping watcher:', err);
       });
@@ -222,43 +215,35 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     }
 
     if (noWatch) {
-      trace('App', 'Watcher disabled (noWatch=true)');
       return;
     }
 
     try {
-      trace('App', 'Creating file watcher', { activeRootPath });
       const watcher = createFileWatcher(activeRootPath, {
         ignored: buildIgnorePatterns(config.customIgnores || []),
         debounce: config.refreshDebounce,
+        usePolling: config.usePolling,
         onAdd: () => {
-          trace('App', 'React onAdd handler called');
-          trace('App', 'refreshTreeRef.current is defined', { isDefined: !!refreshTreeRef.current });
           refreshTreeRef.current();
           refreshGitStatusRef.current();
         },
         onChange: () => {
-          trace('App', 'React onChange handler called');
           refreshTreeRef.current();
           refreshGitStatusRef.current();
         },
         onUnlink: () => {
-          trace('App', 'React onUnlink handler called');
           refreshTreeRef.current();
           refreshGitStatusRef.current();
         },
         onAddDir: () => {
-          trace('App', 'React onAddDir handler called');
           refreshTreeRef.current();
           refreshGitStatusRef.current();
         },
         onUnlinkDir: () => {
-          trace('App', 'React onUnlinkDir handler called');
           refreshTreeRef.current();
           refreshGitStatusRef.current();
         },
         onError: (error) => {
-          trace('App', 'Watcher error', { error: error.message });
           setNotification({
             type: 'error',
             message: `File watcher error: ${error.message}`,
@@ -267,10 +252,8 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       });
 
       watcher.start();
-      trace('App', 'Watcher started successfully');
       watcherRef.current = watcher;
     } catch (error) {
-      trace('App', 'Failed to start watcher', { error: error instanceof Error ? error.message : String(error) });
       console.error('Failed to start file watcher:', error);
       setNotification({
         type: 'warning',
@@ -287,7 +270,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         watcherRef.current = null;
       }
     };
-  }, [activeRootPath, config.refreshDebounce, config.customIgnores, noWatch]);
+  }, [activeRootPath, config.refreshDebounce, config.customIgnores, config.usePolling, noWatch]);
 
   // Handle command bar open/close
   const handleOpenCommandBar = () => {

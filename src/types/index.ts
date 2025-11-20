@@ -79,6 +79,7 @@ export interface CanopyConfig {
   openers?: OpenersConfig;
   autoRefresh: boolean;
   refreshDebounce: number;
+  usePolling: boolean;
   treeIndent: number;
   maxDepth: number | null;
   sortBy: 'name' | 'size' | 'modified' | 'type';
@@ -142,6 +143,7 @@ export const DEFAULT_CONFIG: CanopyConfig = {
   },
   autoRefresh: true,
   refreshDebounce: 100,
+  usePolling: true,
   treeIndent: 2,
   maxDepth: null,
   sortBy: 'name',

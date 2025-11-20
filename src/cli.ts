@@ -19,6 +19,7 @@ interface ParsedArgs {
   noWatch: boolean;
   noGit: boolean;
   initialFilter?: string;
+  debug: boolean;
 }
 
 /**
@@ -35,6 +36,7 @@ function parseCliArgs(argv: string[]): ParsedArgs {
     showVersion: false,
     noWatch: false,
     noGit: false,
+    debug: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -73,6 +75,11 @@ function parseCliArgs(argv: string[]): ParsedArgs {
     if (arg === '--git' || arg === '-g') {
       result.noGit = false; // Allow --git to override --no-git
       result.configOverrides.showGitStatus = true;
+      continue;
+    }
+
+    if (arg === '--debug') {
+      result.debug = true;
       continue;
     }
 
@@ -154,6 +161,7 @@ OPTIONS
   -H, --hidden              Show hidden files (default: false)
   --no-watch                Disable file watching
   --no-git                  Disable git integration
+  --debug                   Enable debug logging
   -h, --help                Show this help message
   -v, --version             Show version number
 
@@ -201,7 +209,9 @@ function showVersion(): void {
 }
 
 // ANSI codes for Alternate Screen Buffer
-const ENTER_ALT_SCREEN = '\x1b[?1049h';
+// \x1b[?1049h = Switch to Alt Buffer
+// \x1b[H      = Move cursor to Home (0,0)
+const ENTER_ALT_SCREEN = '\x1b[?1049h\x1b[H';
 const EXIT_ALT_SCREEN = '\x1b[?1049l';
 
 /**

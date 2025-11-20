@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { TreeNode, CanopyConfig, GitStatus } from '../types/index.js';
 import { buildFileTree } from '../utils/fileTree.js';
 import { filterTreeByName, filterTreeByGitStatus } from '../utils/filter.js';
-import { trace } from '../utils/runtimeLogger.js';
 
 export interface UseFileTreeOptions {
   rootPath: string;
@@ -204,7 +203,6 @@ export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
 
   // Refresh action
   const refresh = useCallback(async () => {
-    trace('useFileTree', 'refresh() called', { rootPath });
     // 1. Increment ID to track this specific request
     const currentRefreshId = ++refreshIdRef.current;
 
@@ -213,26 +211,16 @@ export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
 
     try {
       // 3. FORCE refresh is strictly TRUE here
-      trace('useFileTree', 'Calling buildFileTree with forceRefresh=true');
       const newTree = await buildFileTree(rootPath, config, true);
-      trace('useFileTree', 'buildFileTree returned', { treeLength: newTree.length });
 
       // 4. Safety check: only update if this is still the latest request
       if (currentRefreshId === refreshIdRef.current) {
-        trace('useFileTree', 'Setting tree state (refreshId valid)');
-
         // 5. FORCE update by creating a new array reference
         setTree([...newTree]);
 
         setLoading(false);
-      } else {
-        trace('useFileTree', 'Skipping tree update (stale refreshId)', {
-          currentRefreshId,
-          latestRefreshId: refreshIdRef.current,
-        });
       }
     } catch (error) {
-      trace('useFileTree', 'refresh() failed', { error: error instanceof Error ? error.message : String(error) });
       console.error('Failed to refresh tree:', error);
       if (currentRefreshId === refreshIdRef.current) {
         setLoading(false);
