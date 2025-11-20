@@ -93,8 +93,8 @@ describe('StatusBar', () => {
       );
 
       const output = lastFrame();
-      // Input prompt >
-      expect(output).toContain('> ');
+      // Input prompt /
+      expect(output).toContain('/');
       // Stats should be hidden or replaced (depending on implementation, in my case replaced)
       expect(output).not.toContain('10 files');
     });

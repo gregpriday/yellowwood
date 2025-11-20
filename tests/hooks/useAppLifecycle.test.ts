@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { useAppLifecycle } from '../../src/hooks/useAppLifecycle.js';
 import * as config from '../../src/utils/config.js';
 import * as worktree from '../../src/utils/worktree.js';
@@ -233,7 +233,10 @@ describe('useAppLifecycle', () => {
     vi.mocked(config.loadConfig).mockReturnValue(reinitConfigPromise);
 
     // Call reinitialize
-    const reinitPromise = result.current.reinitialize();
+    let reinitPromise;
+    act(() => {
+      reinitPromise = result.current.reinitialize();
+    });
 
     // Should transition to initializing
     await waitFor(() => {
@@ -264,10 +267,12 @@ describe('useAppLifecycle', () => {
     );
 
     // Start first initialization (still pending)
-    const firstInit = result.current.reinitialize();
-
-    // Try to start second initialization immediately
-    const secondInit = result.current.reinitialize();
+    let firstInit, secondInit;
+    act(() => {
+      firstInit = result.current.reinitialize();
+      // Try to start second initialization immediately
+      secondInit = result.current.reinitialize();
+    });
 
     // Resolve config
     resolveConfig!();

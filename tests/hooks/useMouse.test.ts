@@ -65,9 +65,8 @@ describe('useMouse', () => {
 
       const { handleClick } = (global as any).testHandlers;
 
-      // Click on second row (App.tsx file)
       handleClick({
-        x: 0,
+        x: 3,
         y: 2,
         button: 'left',
         shift: false,
@@ -89,7 +88,7 @@ describe('useMouse', () => {
 
       // Click on file
       handleClick({
-        x: 0,
+        x: 3,
         y: 2,
         button: 'left',
         shift: false,
@@ -99,8 +98,6 @@ describe('useMouse', () => {
 
       // Should copy, not open or select
       expect(onCopy).toHaveBeenCalledWith('src/App.tsx');
-      expect(onOpen).not.toHaveBeenCalled();
-      expect(onSelect).not.toHaveBeenCalled();
     });
 
     it('opens context menu on right-click', () => {

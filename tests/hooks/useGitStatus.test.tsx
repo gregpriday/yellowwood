@@ -390,10 +390,12 @@ describe('useGitStatus', () => {
 		expect(result.current.gitStatus).toBeInstanceOf(Map);
 	});
 
-	it('exposes clear method', () => {
+	it('exposes clear method', async () => {
 		const { result } = renderHook(() => useGitStatus(testRepoPath, true));
 
-		expect(typeof result.current.clear).toBe('function');
+		await waitFor(() => {
+			expect(typeof result.current.clear).toBe('function');
+		});
 	});
 
 	it('clear() empties git status map immediately', async () => {
@@ -473,11 +475,11 @@ describe('useGitStatus', () => {
 		});
 
 		// Wait for the fetch to complete
-		await new Promise(resolve => setTimeout(resolve, 150));
-
-		// Status should remain empty (in-flight request was invalidated)
-		expect(result.current.gitStatus.size).toBe(0);
-		expect(result.current.gitEnabled).toBe(false);
+		await waitFor(() => {
+			// Status should remain empty (in-flight request was invalidated)
+			expect(result.current.gitStatus.size).toBe(0);
+			expect(result.current.gitEnabled).toBe(false);
+		});
 	});
 
 	it('clears status immediately when cwd changes', async () => {

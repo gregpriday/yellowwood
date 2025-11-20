@@ -44,7 +44,7 @@ export function FolderNode({
 
   // 3. Recursive Git Count (Hidden Changes)
   // Only show if collapsed and has changes > 0
-  const showHiddenChanges = !node.expanded && node.recursiveGitCount && node.recursiveGitCount > 0;
+  const showHiddenChanges = !node.expanded && (node.recursiveGitCount || 0) > 0;
 
   // 4. Render Selected State (Inverted)
   if (selected) {
