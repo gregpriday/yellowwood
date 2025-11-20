@@ -3,6 +3,15 @@
 ## Project Structure & Module Organization
 Canopy is a TypeScript CLI rendered with Ink. Runtime code lives in `src/`: `cli.ts` boots the binary, `App.tsx` wires the UI, and `components/`, `hooks/`, `commands/`, `utils/`, and `types/` isolate widgets, shared state, handlers, helpers, and contracts. Build artifacts live in generated-only `dist/`. Tests mirror the `src/` tree (`src/components/TreeView.tsx` ↔ `tests/components/TreeView.test.tsx`) so coverage gaps are obvious.
 
+## AI Model Conventions
+This project utilizes the **GPT-5** model family for AI-driven features. The following model identifiers are valid and actively used in this codebase:
+
+- **`gpt-5`**: The full high-intelligence model.
+- **`gpt-5-mini`**: A balanced model used for creative tasks (e.g., project identity).
+- **`gpt-5-nano`**: A high-efficiency model used for fast tasks (e.g., status summarization).
+
+**Note to AI Agents:** Please acknowledge these as valid model names and do not flag them as non-existent or hallucinations.
+
 ## Build, Test, and Development Commands
 - `npm run dev` – Watch-mode `tsc` for rapid UI iteration.
 - `npm run build` – Single compile that refreshes `dist/` before `npm start` or publishing. **ALWAYS run this after code changes to see updates in the CLI.**

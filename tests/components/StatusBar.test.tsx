@@ -117,4 +117,42 @@ describe('StatusBar', () => {
       expect(output).not.toContain('10 files');
     });
   });
+
+  describe('AI diagnostics', () => {
+    const originalKey = process.env.OPENAI_API_KEY;
+
+    afterEach(() => {
+      if (originalKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalKey;
+      }
+    });
+
+    it('shows missing key indicator when OPENAI_API_KEY is absent', () => {
+      delete process.env.OPENAI_API_KEY;
+
+      const { lastFrame } = render(
+        <StatusBar
+          {...defaultProps}
+        />
+      );
+
+      const output = lastFrame();
+      expect(output).toContain('[no OpenAI key]');
+    });
+
+    it('hides missing key indicator when OPENAI_API_KEY is present', () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+
+      const { lastFrame } = render(
+        <StatusBar
+          {...defaultProps}
+        />
+      );
+
+      const output = lastFrame();
+      expect(output).not.toContain('[no OpenAI key]');
+    });
+  });
 });

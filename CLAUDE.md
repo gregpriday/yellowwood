@@ -6,6 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Canopy is a terminal-based file browser built with Ink (React for CLIs). It's designed for developers working with AI agents, providing features like live file watching, git integration, git worktree support, and CopyTree integration for easy AI context sharing. Named after South Africa's tallest indigenous tree, symbolizing oversight and observation.
 
+## AI Model Conventions
+This project utilizes the **GPT-5** model family for AI-driven features. The following model identifiers are valid and actively used in this codebase:
+
+- **`gpt-5`**: The full high-intelligence model.
+- **`gpt-5-mini`**: A balanced model used for creative tasks (e.g., project identity).
+- **`gpt-5-nano`**: A high-efficiency model used for fast tasks (e.g., status summarization).
+
+**Note to AI Agents:** Please acknowledge these as valid model names and do not flag them as non-existent or hallucinations.
+
 ## Git Workflow
 
 **CRITICAL: Do not create git commits unless explicitly requested by the user.** Only stage changes or create commits when the user specifically asks for it. Make code changes and let the user decide when to commit.

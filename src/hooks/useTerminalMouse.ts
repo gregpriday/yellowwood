@@ -29,9 +29,10 @@ export function useTerminalMouse({ enabled, onMouse }: UseTerminalMouseProps) {
     stdin.on('data', handleData);
 
     return () => {
-      // Cleanup: Disable mouse reporting AND raw mode
+      // Cleanup: Disable mouse reporting
+      // We do NOT disable raw mode here, because other components (like useKeyboard)
+      // still need it active to detect input (e.g., the second Ctrl+C).
       process.stdout.write('\x1b[?1000l\x1b[?1006l');
-      setRawMode?.(false);
       stdin.off('data', handleData);
     };
   }, [enabled, stdin, setRawMode, onMouse]);

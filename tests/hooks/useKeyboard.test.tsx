@@ -55,7 +55,7 @@ describe('useKeyboard', () => {
   describe('navigation keys', () => {
     it('emits nav:move for arrow keys', async () => {
       const { spy, unsubscribe } = listen('nav:move');
-      const { stdin } = render(<TestComponent handlers={{ selectedPath: '/root/file' }} />);
+      const { stdin } = render(<TestComponent handlers={{}} />);
       await waitForInk(stdin);
 
       await writeKey(stdin, '\x1B[A');
@@ -72,7 +72,7 @@ describe('useKeyboard', () => {
 
     it('emits nav:move for paging and home/end sequences', async () => {
       const { spy, unsubscribe } = listen('nav:move');
-      const { stdin } = render(<TestComponent handlers={{ selectedPath: '/root/file' }} />);
+      const { stdin } = render(<TestComponent handlers={{}} />);
       await waitForInk(stdin, true);
 
       await writeKey(stdin, '\x1B[5~');
@@ -95,12 +95,13 @@ describe('useKeyboard', () => {
   describe('file/folder actions', () => {
     it('emits nav:primary when Enter is pressed', async () => {
       const { spy, unsubscribe } = listen('nav:primary');
-      const { stdin } = render(<TestComponent handlers={{ selectedPath: '/root/file' }} />);
+      const { stdin } = render(<TestComponent handlers={{}} />);
       await waitForInk(stdin);
 
       await writeKey(stdin, '\r');
 
-      expect(spy).toHaveBeenCalledWith({ path: '/root/file' });
+      expect(spy).toHaveBeenCalled();
+      expect(spy.mock.calls[0]).toEqual([]);
       unsubscribe();
     });
 
@@ -128,7 +129,7 @@ describe('useKeyboard', () => {
 
     it('emits modal open for worktree panel when Shift+W is pressed', async () => {
       const { spy, unsubscribe } = listen('ui:modal:open');
-      const { stdin } = render(<TestComponent handlers={{ selectedPath: '/root/file' }} />);
+      const { stdin } = render(<TestComponent handlers={{}} />);
       await waitForInk(stdin);
 
       await writeKey(stdin, 'W'); // Shift+W produces uppercase W
@@ -141,7 +142,7 @@ describe('useKeyboard', () => {
   describe('command/filter actions', () => {
     it('emits modal open for command bar when / is pressed', async () => {
       const { spy, unsubscribe } = listen('ui:modal:open');
-      const { stdin } = render(<TestComponent handlers={{ selectedPath: '/root/file' }} />);
+      const { stdin } = render(<TestComponent handlers={{}} />);
       await waitForInk(stdin);
 
       await writeKey(stdin, '/');
@@ -152,7 +153,7 @@ describe('useKeyboard', () => {
 
     it('emits modal open with filter context when Ctrl+F is pressed', async () => {
       const { spy, unsubscribe } = listen('ui:modal:open');
-      const { stdin } = render(<TestComponent handlers={{ selectedPath: '/root/file' }} />);
+      const { stdin } = render(<TestComponent handlers={{}} />);
       await waitForInk(stdin);
 
       await writeKey(stdin, '\x06'); // Ctrl+F
@@ -209,7 +210,7 @@ describe('useKeyboard', () => {
 
     it('emits modal open when ? is pressed', async () => {
       const { spy, unsubscribe } = listen('ui:modal:open');
-      const { stdin } = render(<TestComponent handlers={{ selectedPath: '/root/file' }} />);
+      const { stdin } = render(<TestComponent handlers={{}} />);
       await waitForInk(stdin);
 
       await writeKey(stdin, '?');
@@ -220,12 +221,12 @@ describe('useKeyboard', () => {
 
     it('emits modal open for context menu when m is pressed', async () => {
       const { spy, unsubscribe } = listen('ui:modal:open');
-      const { stdin } = render(<TestComponent handlers={{ selectedPath: '/root/file' }} />);
+      const { stdin } = render(<TestComponent handlers={{}} />);
       await waitForInk(stdin);
 
       await writeKey(stdin, 'm');
 
-      expect(spy).toHaveBeenCalledWith({ id: 'context-menu', context: { path: '/root/file' } });
+      expect(spy).toHaveBeenCalledWith({ id: 'context-menu', context: undefined });
       unsubscribe();
     });
 
@@ -256,7 +257,7 @@ describe('useKeyboard', () => {
       const onNextWorktree = vi.fn();
       const { spy, unsubscribe } = listen('ui:modal:open');
       const { stdin } = render(
-        <TestComponent handlers={{ onNextWorktree, selectedPath: '/root/file' }} />
+        <TestComponent handlers={{ onNextWorktree }} />
       );
       await waitForInk(stdin);
 
@@ -328,7 +329,7 @@ describe('useKeyboard', () => {
   describe('cleanup and unmount', () => {
     it('stops emitting after unmount', async () => {
       const { spy, unsubscribe } = listen('nav:move');
-      const { stdin, unmount } = render(<TestComponent handlers={{ selectedPath: '/root/file' }} />);
+      const { stdin, unmount } = render(<TestComponent handlers={{}} />);
       await waitForInk(stdin);
 
       unmount();

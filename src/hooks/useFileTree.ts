@@ -55,6 +55,7 @@ export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
   const [selectedPath, setSelectedPath] = useState<string | null>(initialSelectedPath || null);
   const [loading, setLoading] = useState<boolean>(true);
   const initialStateSignatureRef = useRef<string | null>(null);
+  const selectedPathRef = useRef<string | null>(selectedPath);
 
   // Ref to track refresh cancellation and initial load
   const refreshIdRef = useRef(0);
@@ -171,6 +172,10 @@ export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
     () => (gitStatusMap ? Array.from(gitStatusMap.entries()).sort((a, b) => a[0].localeCompare(b[0])) : []),
     [gitStatusMap]
   );
+
+  useEffect(() => {
+    selectedPathRef.current = selectedPath;
+  }, [selectedPath]);
 
   const treeWithGitStatus = useMemo(() => {
     if (!gitStatusMap || gitStatusMap.size === 0) {
@@ -309,7 +314,9 @@ export function useFileTree(options: UseFileTreeOptions): UseFileTreeResult {
           expandFolder(path);
         }
       }),
-      events.on('nav:primary', ({ path }) => {
+      events.on('nav:primary', () => {
+        const path = selectedPathRef.current;
+        if (!path) return;
         const currentNode = getCurrentNode(flattenedTree, path);
         if (!currentNode) return;
 

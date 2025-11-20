@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import type { TreeNode, CanopyConfig } from '../types/index.js';
 import { events } from '../services/events.js';
@@ -20,6 +20,7 @@ interface TreeViewProps {
   config: CanopyConfig;
   expandedPaths?: Set<string>; // Optional controlled expansion
   disableMouse?: boolean; // Disable mouse interactions
+  viewportHeight?: number; // Optionally provided by parent to keep calculations in sync
 }
 
 export const TreeView: React.FC<TreeViewProps> = ({
@@ -28,12 +29,14 @@ export const TreeView: React.FC<TreeViewProps> = ({
   config,
   expandedPaths: controlledExpandedPaths,
   disableMouse = false,
+  viewportHeight: providedViewportHeight,
 }) => {
-  // Header (3) + StatusBar (4) = 7 reserved rows
-  const viewportHeight = useViewportHeight(7);
+  // Fallback viewport height if parent does not provide one
+  const viewportHeight = providedViewportHeight ?? useViewportHeight(8);
 
   // Scroll state
   const [scrollOffset, setScrollOffset] = useState(0);
+  const prevScrollOffsetRef = useRef(0);
 
   // Track expanded folders (use controlled if provided, otherwise internal state)
   const [internalExpandedPaths, setInternalExpandedPaths] = useState<Set<string>>(new Set());
@@ -61,22 +64,62 @@ export const TreeView: React.FC<TreeViewProps> = ({
     return index >= 0 ? index : 0;
   }, [flattenedTree, selectedPath]);
 
-  // Auto-scroll to keep cursor visible
-  useEffect(() => {
-    const newScrollOffset = calculateScrollToNode(
-      cursorIndex,
-      scrollOffset,
-      viewportHeight
-    );
-    if (newScrollOffset !== scrollOffset) {
-      setScrollOffset(newScrollOffset);
-    }
-  }, [cursorIndex, scrollOffset, viewportHeight]);
+  // Reserve fixed rows for scroll indicators to avoid feedback loops
+  const INDICATOR_ROWS = 2;
+  const nodeViewportHeight = Math.max(1, viewportHeight - INDICATOR_ROWS);
 
-  // Calculate visible window (memoized)
+  const strictClamp = useCallback((offset: number, totalNodes: number) => {
+    return Math.max(0, Math.min(offset, Math.max(0, totalNodes - nodeViewportHeight)));
+  }, [nodeViewportHeight]);
+
+  const prevFlattenedTreeRef = useRef<FlattenedNode[]>(flattenedTree);
+
+  // Calculate visible window (memoized) using node-aware viewport height
   const visibleWindow = useMemo(() => {
-    return calculateVisibleWindow(flattenedTree, scrollOffset, viewportHeight);
-  }, [flattenedTree, scrollOffset, viewportHeight]);
+    return calculateVisibleWindow(flattenedTree, scrollOffset, nodeViewportHeight);
+  }, [flattenedTree, scrollOffset, nodeViewportHeight]);
+
+  // Anchor scroll position through tree mutations to keep selected row in place
+  useLayoutEffect(() => {
+    if (prevFlattenedTreeRef.current === flattenedTree) {
+      return;
+    }
+
+    const prevCursorIndex = findNodeIndex(prevFlattenedTreeRef.current, selectedPath);
+    const prevVisualRow = prevCursorIndex >= 0 ? prevCursorIndex - prevScrollOffsetRef.current : null;
+    const newCursorIndex = findNodeIndex(flattenedTree, selectedPath);
+
+    if (prevVisualRow !== null && newCursorIndex !== -1) {
+      let targetScroll = newCursorIndex - prevVisualRow;
+      targetScroll = Math.max(0, targetScroll); // allow elastic bottom, no top overflow
+      setScrollOffset(targetScroll);
+    } else {
+      // Fallback if selection disappeared
+      setScrollOffset((current) => strictClamp(current, flattenedTree.length));
+    }
+
+    prevFlattenedTreeRef.current = flattenedTree;
+  }, [flattenedTree, selectedPath, strictClamp]);
+
+  // Track previous scroll offset for anchoring calculations
+  useEffect(() => {
+    prevScrollOffsetRef.current = scrollOffset;
+  }, [scrollOffset]);
+
+  // Auto-scroll to keep cursor visible when selection or viewport height changes
+  useEffect(() => {
+    setScrollOffset((currentOffset) => {
+      const nextOffset = calculateScrollToNode(
+        cursorIndex,
+        currentOffset,
+        nodeViewportHeight
+      );
+      if (nextOffset === currentOffset) {
+        return currentOffset;
+      }
+      return strictClamp(nextOffset, flattenedTree.length);
+    });
+  }, [cursorIndex, nodeViewportHeight, flattenedTree.length, strictClamp]);
 
   const emitSelect = useCallback((path: string) => {
     events.emit('nav:select', { path });
@@ -102,18 +145,18 @@ export const TreeView: React.FC<TreeViewProps> = ({
   }, [cursorIndex, flattenedTree, emitSelect]);
 
   const handlePageUp = useCallback(() => {
-    const newIndex = Math.max(0, cursorIndex - viewportHeight);
+    const newIndex = Math.max(0, cursorIndex - nodeViewportHeight);
     if (flattenedTree[newIndex]) {
       emitSelect(flattenedTree[newIndex].path);
     }
-  }, [cursorIndex, viewportHeight, flattenedTree, emitSelect]);
+  }, [cursorIndex, nodeViewportHeight, flattenedTree, emitSelect]);
 
   const handlePageDown = useCallback(() => {
-    const newIndex = Math.min(flattenedTree.length - 1, cursorIndex + viewportHeight);
+    const newIndex = Math.min(flattenedTree.length - 1, cursorIndex + nodeViewportHeight);
     if (flattenedTree[newIndex]) {
       emitSelect(flattenedTree[newIndex].path);
     }
-  }, [cursorIndex, viewportHeight, flattenedTree, emitSelect]);
+  }, [cursorIndex, nodeViewportHeight, flattenedTree, emitSelect]);
 
   const handleHome = useCallback(() => {
     if (flattenedTree[0]) {
@@ -218,20 +261,19 @@ export const TreeView: React.FC<TreeViewProps> = ({
   }, [cursorIndex, flattenedTree, handleToggle, emitSelect]);
 
   const handleScrollChange = useCallback((newOffset: number) => {
-    setScrollOffset(newOffset);
-  }, []);
+    setScrollOffset(strictClamp(newOffset, flattenedTree.length));
+  }, [strictClamp, flattenedTree.length]);
 
   // Calculate header offset for mouse interaction
-  // Header is 3 rows (border + content + border)
-  // Plus 1 row if top scroll indicator is visible
-  const headerOffset = 3 + (visibleWindow.scrolledPast > 0 ? 1 : 0);
+  // Header is 3 rows (border + content + border) + always-present top indicator row
+  const headerOffset = 4;
 
   // Wire up mouse navigation
   const { handleClick, handleScroll } = useMouse({
     fileTree: flattenedTree,
     selectedPath,
     scrollOffset,
-    viewportHeight,
+    viewportHeight: nodeViewportHeight,
     headerHeight: headerOffset,
     onSelect: emitSelect,
     onToggle: handleToggle,
@@ -285,12 +327,14 @@ export const TreeView: React.FC<TreeViewProps> = ({
       flexDirection="column"
       paddingX={1}
     >
-      {/* Scroll indicator - top */}
-      {visibleWindow.scrolledPast > 0 && (
-        <Box>
+      {/* Scroll indicator - top (always reserve space) */}
+      <Box height={1}>
+        {visibleWindow.scrolledPast > 0 ? (
           <Text dimColor>▲ {visibleWindow.scrolledPast} more above</Text>
-        </Box>
-      )}
+        ) : (
+          <Text> </Text>
+        )}
+      </Box>
 
       {/* Visible nodes */}
       {visibleWindow.nodes.map((node) => (
@@ -303,12 +347,19 @@ export const TreeView: React.FC<TreeViewProps> = ({
         />
       ))}
 
-      {/* Scroll indicator - bottom */}
-      {visibleWindow.remaining > 0 && (
-        <Box>
-          <Text dimColor>▼ {visibleWindow.remaining} more below</Text>
-        </Box>
+      {/* Spacer to keep layout stable if list shorter than viewport */}
+      {visibleWindow.nodes.length < nodeViewportHeight && (
+        <Box height={nodeViewportHeight - visibleWindow.nodes.length} />
       )}
+
+      {/* Scroll indicator - bottom (always reserve space) */}
+      <Box height={1}>
+        {visibleWindow.remaining > 0 ? (
+          <Text dimColor>▼ {visibleWindow.remaining} more below</Text>
+        ) : (
+          <Text> </Text>
+        )}
+      </Box>
     </Box>
   );
 };

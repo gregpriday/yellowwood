@@ -148,9 +148,6 @@ function showVersion(): void {
   }
 }
 
-const ENTER_ALT_SCREEN = '\x1b[?1049h\x1b[H';
-const EXIT_ALT_SCREEN = '\x1b[?1049l';
-
 async function main(): Promise<void> {
   try {
     const parsedArgs = parseCliArgs(process.argv);
@@ -181,7 +178,8 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    process.stdout.write(ENTER_ALT_SCREEN);
+    // We no longer use the Alternate Screen Buffer (ENTER_ALT_SCREEN).
+    // This keeps the Canopy output visible in the terminal history after exit.
 
     const { waitUntilExit } = render(
       React.createElement(App, {
@@ -196,11 +194,9 @@ async function main(): Promise<void> {
 
     await waitUntilExit();
 
-    process.stdout.write(EXIT_ALT_SCREEN);
     process.exit(0);
 
   } catch (error) {
-    process.stdout.write(EXIT_ALT_SCREEN);
     if (error instanceof Error) {
       console.error(`Error: ${error.message}`);
       process.exit(1);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'; // Added useCallback
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'; // Added useCallback
 import { Box, Text, useApp, useStdout } from 'ink';
 import { Header } from './components/Header.js';
 import { TreeView } from './components/TreeView.js';
@@ -21,7 +21,7 @@ import { useGitStatus } from './hooks/useGitStatus.js';
 import { useAIStatus } from './hooks/useAIStatus.js';
 import { useProjectIdentity } from './hooks/useProjectIdentity.js';
 import { saveSessionState } from './utils/state.js';
-import { events, type ModalId } from './services/events.js'; // Import event bus
+import { events, type ModalId, type ModalContextMap } from './services/events.js'; // Import event bus
 
 interface AppProps {
   cwd: string;
@@ -99,7 +99,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
 
   // Listen for ui:modal:open events
   const [activeModals, setActiveModals] = useState<Set<ModalId>>(new Set());
-  const [modalContext, setModalContext] = useState<Record<ModalId, any>>({});
+  const [modalContext, setModalContext] = useState<Partial<ModalContextMap>>({});
 
   // Filter state - initialize from CLI if provided
   const [filterActive, setFilterActive] = useState(!!initialFilter);
@@ -112,6 +112,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   // Active worktree state (can change via user actions)
   const [activeWorktreeId, setActiveWorktreeId] = useState<string | null>(initialActiveWorktreeId);
   const [activeRootPath, setActiveRootPath] = useState<string>(initialActiveRootPath);
+  const selectedPathRef = useRef<string | null>(null);
 
   // Git visibility state
   const [showGitMarkers, setShowGitMarkers] = useState(config.showGitStatus && !noGit);
@@ -134,7 +135,11 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   }, [lifecycleStatus, initialActiveWorktreeId, initialActiveRootPath]);
 
   // UseViewportHeight must be declared before useFileTree
-  const viewportHeight = useViewportHeight(8);
+  // Reserve a fixed layout height to avoid viewport thrashing when footer content changes
+  const headerRows = 3;
+  const statusRows = 5;
+  const reservedRows = headerRows + statusRows;
+  const viewportHeight = useViewportHeight(reservedRows);
 
   const { gitStatus, gitEnabled, refresh: refreshGitStatus, clear: clearGitStatus, isLoading: isGitLoading } = useGitStatus(
     activeRootPath,
@@ -170,6 +175,10 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   });
 
   useEffect(() => {
+    selectedPathRef.current = selectedPath;
+  }, [selectedPath]);
+
+  useEffect(() => {
     const handleOpen = events.on('ui:modal:open', ({ id, context }) => {
       setActiveModals((prev) => {
         const next = new Set(prev);
@@ -179,9 +188,12 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       if (context !== undefined) {
         setModalContext((prev) => ({ ...prev, [id]: context }));
       }
-      if (id === 'context-menu' && context?.path) {
-        setContextMenuTarget(context.path);
-        setContextMenuPosition({ x: 0, y: 0 });
+      if (id === 'context-menu') {
+        const targetPath = (context as { path?: string } | undefined)?.path || selectedPathRef.current || '';
+        if (targetPath) {
+          setContextMenuTarget(targetPath);
+          setContextMenuPosition({ x: 0, y: 0 });
+        }
       }
     });
 
@@ -214,7 +226,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   }, []);
 
   const refreshTree = useCallback(async () => {
-    events.emit('sys:refresh', undefined);
+    events.emit('sys:refresh');
   }, []);
 
   const exitApp = useCallback(() => {
@@ -328,7 +340,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       setFilterActive(false);
       setFilterQuery('');
 
-      setIsWorktreePanelOpen(false);
+      events.emit('ui:modal:close', { id: 'worktree' });
       events.emit('ui:notify', {
         type: 'success',
         message: `Switched to ${targetWorktree.branch || targetWorktree.name}`,
@@ -366,7 +378,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   };
 
   const handleQuit = async () => {
-    events.emit('sys:quit', undefined);
+    events.emit('sys:quit');
     clearGitStatus();
     exit();
   };
@@ -403,14 +415,17 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     onOpenCopyTreeBuilder: anyModalOpen ? undefined : handleOpenCopyTreeBuilder,
 
     onRefresh: anyModalOpen ? undefined : () => {
-      events.emit('sys:refresh', undefined);
+      events.emit('sys:refresh');
     },
     onOpenHelp: undefined,
-    onOpenContextMenu: anyModalOpen ? undefined : () => {
-        if (selectedPath) {
-            events.emit('ui:modal:open', { id: 'context-menu', context: { path: selectedPath } });
-        }
-    },
+    onOpenContextMenu: anyModalOpen
+      ? undefined
+      : () => {
+          const path = selectedPathRef.current;
+          if (path) {
+            events.emit('ui:modal:open', { id: 'context-menu', context: { path } });
+          }
+        },
     onQuit: handleQuit,
     onForceExit: handleQuit,
     onWarnExit: () => {
@@ -419,7 +434,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         message: 'Press Ctrl+C again to quit',
       });
     },
-    selectedPath: selectedPath,
   });
 
   if (lifecycleStatus === 'initializing') {
@@ -462,6 +476,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
           config={effectiveConfig}
           expandedPaths={expandedFolders}
           disableMouse={anyModalOpen}
+          viewportHeight={viewportHeight}
           // onCopyPath={handleCopySelectedPath} // Removed
         />
       </Box>

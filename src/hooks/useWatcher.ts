@@ -11,6 +11,10 @@ export function useWatcher(rootPath: string, config: CanopyConfig, disabled: boo
       return;
     }
 
+    const emitRefresh = debounce(() => {
+      events.emit('sys:refresh');
+    }, config.refreshDebounce);
+
     const watcher = createFileWatcher(rootPath, {
       ignored: buildIgnorePatterns(config.customIgnores),
       debounce: config.refreshDebounce,
@@ -20,20 +24,14 @@ export function useWatcher(rootPath: string, config: CanopyConfig, disabled: boo
           const absolutePath = path.resolve(rootPath, change.path);
           events.emit('watcher:change', { type: change.type, path: absolutePath });
         }
+        emitRefresh();
       },
     });
-
-    const emitRefresh = debounce(() => {
-      events.emit('sys:refresh', undefined);
-    }, config.refreshDebounce);
-
-    const unsubscribe = events.on('watcher:change', () => emitRefresh());
 
     watcher.start();
 
     return () => {
       void watcher.stop();
-      unsubscribe();
       emitRefresh.cancel();
     };
   }, [rootPath, config, disabled]);

@@ -9,7 +9,6 @@ import { events } from '../services/events.js';
 export interface KeyboardHandlers {
   enabled?: boolean;
   // File/Folder Actions
-  // onOpenFile event is now emitted from within useKeyboard, but needs selectedPath
   onToggleExpand?: () => void;    // Space key
 
   // Worktree Actions
@@ -34,9 +33,6 @@ export interface KeyboardHandlers {
   onQuit?: () => void;             // q key
   onForceExit?: () => void;        // Ctrl+C (second press)
   onWarnExit?: () => void;         // Ctrl+C (first press)
-
-  // Data needed for events
-  selectedPath: string | null;
 }
 
 const HOME_SEQUENCES = new Set(['\u001B[H', '\u001BOH', '\u001B[1~', '\u001B[7~', '\u001B[7$', '\u001B[7^']);
@@ -159,9 +155,7 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
 
     // File/Folder Actions
     if (key.return) {
-      if (handlers.selectedPath) {
-        events.emit('nav:primary', { path: handlers.selectedPath });
-      }
+      events.emit('nav:primary');
       return;
     }
 
@@ -227,9 +221,11 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
     }
 
     if (input === 'm') {
-      if (handlers.selectedPath) {
-        events.emit('ui:modal:open', { id: 'context-menu', context: { path: handlers.selectedPath } });
+      if (handlers.onOpenContextMenu) {
+        handlers.onOpenContextMenu();
+        return;
       }
+      events.emit('ui:modal:open', { id: 'context-menu' });
       return;
     }
 

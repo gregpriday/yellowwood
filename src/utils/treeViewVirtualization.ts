@@ -122,11 +122,8 @@ export function calculateVisibleWindow(
 ): VisibleWindow {
   const totalNodes = flatNodes.length;
 
-  // Clamp scroll offset to valid range
-  const clampedOffset = Math.max(
-    0,
-    Math.min(scrollOffset, Math.max(0, totalNodes - viewportHeight)),
-  );
+  // Only clamp to top; allow offsets beyond bottom for elastic space after collapses
+  const clampedOffset = Math.max(0, scrollOffset);
 
   // Calculate window bounds
   const startIndex = clampedOffset;

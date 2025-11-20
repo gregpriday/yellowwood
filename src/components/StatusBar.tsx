@@ -40,6 +40,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [input, setInput] = useState('');
   const { stdout } = useStdout();
+  const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY?.trim());
 
   useEffect(() => {
     if (feedback) {
@@ -195,7 +196,12 @@ export const StatusBar: React.FC<StatusBarProps> = ({
                  ) : aiStatus ? (
                    <Text color="magenta">{aiStatus.emoji} {aiStatus.description}</Text>
                  ) : (
-                   <Text color="green">🌲 Canopy</Text>
+                   <Box>
+                     <Text color="green">🌲 Canopy</Text>
+                     {!hasOpenAIKey && (
+                       <Text dimColor> [no OpenAI key]</Text>
+                     )}
+                   </Box>
                  )}
             </Box>
           </Box>

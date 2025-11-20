@@ -2,6 +2,12 @@ import { EventEmitter } from 'events';
 import type { NotificationType } from '../types/index.js';
 
 export type ModalId = 'help' | 'worktree' | 'context-menu' | 'command-bar';
+export interface ModalContextMap {
+  help: undefined;
+  worktree: undefined;
+  'context-menu': { path: string; position?: { x: number; y: number } };
+  'command-bar': { initialInput?: string };
+}
 
 // 1. Define Payload Types
 export interface CopyTreePayload {
@@ -31,10 +37,9 @@ export interface NavToggleExpandPayload {
   path: string;
 }
 
-export interface UIModalOpenPayload {
-  id: ModalId;
-  context?: any; // Context-specific payload (path for context menu, etc.)
-}
+export type UIModalOpenPayload = {
+  [Id in ModalId]: { id: Id; context?: ModalContextMap[Id] };
+}[ModalId];
 
 export interface UIModalClosePayload {
   id?: ModalId; // If omitted, close all
@@ -42,7 +47,7 @@ export interface UIModalClosePayload {
 
 export interface WatcherChangePayload {
   type: 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir';
-  path: string; // Absolute or normalized path
+  path: string; // Absolute path
 }
 
 
@@ -58,7 +63,7 @@ export type CanopyEventMap = {
   'nav:collapse': NavCollapsePayload;
   'nav:move': NavMovePayload;
   'nav:toggle-expand': NavToggleExpandPayload; // Added
-  'nav:primary': { path: string };
+  'nav:primary': void;
 
   'file:open': { path: string };
   'file:copy-tree': CopyTreePayload;
@@ -80,10 +85,14 @@ export type CanopyEventMap = {
 class TypedEventBus {
   private bus = new EventEmitter();
 
+  private debugEnabled = process.env.CANOPY_DEBUG_EVENTS === '1';
+
   // Subscribe
   on<K extends keyof CanopyEventMap>(
     event: K,
-    listener: (payload: CanopyEventMap[K]) => void
+    listener: CanopyEventMap[K] extends void
+      ? () => void
+      : (payload: CanopyEventMap[K]) => void
   ) {
     this.bus.on(event, listener as (...args: any[]) => void); // Type assertion for EventEmitter
     // Return un-subscriber for easy useEffect cleanup
@@ -95,9 +104,13 @@ class TypedEventBus {
   // Publish
   emit<K extends keyof CanopyEventMap>(
     event: K,
-    payload: CanopyEventMap[K]
+    ...args: CanopyEventMap[K] extends void ? [] : [CanopyEventMap[K]]
   ) {
-    this.bus.emit(event, payload);
+    if (this.debugEnabled) {
+      // eslint-disable-next-line no-console
+      console.log('[events]', event, args[0]);
+    }
+    this.bus.emit(event, ...(args as any[]));
   }
 }
 
