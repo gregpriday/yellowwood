@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import type { TreeNode as TreeNodeType, CanopyConfig, GitStatus } from '../types/index.js';
 import type { FlattenedNode } from '../utils/treeViewVirtualization.js';
 import { getFolderIcon } from '../utils/fileIcons.js';
+import { getFolderStyle } from '../utils/nodeStyling.js';
 
 interface FolderNodeProps {
   node: TreeNodeType & Partial<FlattenedNode>;
@@ -12,10 +13,6 @@ interface FolderNodeProps {
   getNodeColor: (node: TreeNodeType, selected: boolean, showGitStatus: boolean) => string;
 }
 
-/**
- * FolderNode component - renders a directory node with expansion icon, name, and git status.
- * With virtualization, child rendering is handled by TreeView, not recursively here.
- */
 export function FolderNode({
   node,
   selected,
@@ -23,25 +20,29 @@ export function FolderNode({
   mapGitStatusMarker,
   getNodeColor,
 }: FolderNodeProps): React.JSX.Element {
-  // Get tree guide prefix
   const treeGuide = ' '.repeat(node.depth * config.treeIndent);
-
-  // Get Nerd Font icon for folder
   const icon = getFolderIcon(node.name, node.expanded || false);
-
-  // Get git status marker if enabled
-  const gitMarker =
-    config.showGitStatus && node.gitStatus
+  
+  const gitMarker = config.showGitStatus && node.gitStatus
       ? ` ${mapGitStatusMarker(node.gitStatus)}`
       : '';
 
-  // Get color for the folder
-  const color = getNodeColor(node, selected, config.showGitStatus);
+  // 1. Determine Style
+  // Standard git/selection logic first
+  let color = getNodeColor(node, selected, config.showGitStatus);
+  let isBold = false;
+  let isDimmed = !selected && node.gitStatus === 'deleted';
+  
+  // 2. Apply Custom Folder Styling if not selected/modified
+  // (We want selection to override custom colors for readability)
+  if (!selected && !node.gitStatus) {
+    const style = getFolderStyle(node.name);
+    if (style.color) color = style.color;
+    if (style.bold) isBold = true;
+    if (style.dimColor) isDimmed = true;
+  }
 
-  // Determine if text should be dimmed (for deleted folders, but never dim selected items)
-  const dimmed = !selected && node.gitStatus === 'deleted';
-
-  // For selected items, use inverted colors (background highlight)
+  // 3. Render Selected State (Inverted)
   if (selected) {
     return (
       <Box>
@@ -55,11 +56,11 @@ export function FolderNode({
     );
   }
 
-  // Non-selected items use standard colors
+  // 4. Render Standard State
   return (
     <Box>
       <Text color="gray" dimColor>{treeGuide}</Text>
-      <Text color={color} dimColor={dimmed} bold>
+      <Text color={color} dimColor={isDimmed} bold={isBold}>
         {icon} {node.name}{gitMarker}
       </Text>
     </Box>
