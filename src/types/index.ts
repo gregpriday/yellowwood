@@ -97,6 +97,11 @@ export interface RecentActivityConfig {
   maxEntries: number;
 }
 
+/**
+ * Import context menu configuration types
+ */
+import type { ContextMenuConfig } from './contextMenu.js';
+
 export interface CanopyConfig {
   editor: string;
   editorArgs: string[];
@@ -131,6 +136,7 @@ export interface CanopyConfig {
     refreshIntervalMs?: number; // Optional: auto-refresh interval (0 = disabled)
   };
   recentActivity?: RecentActivityConfig;
+  contextMenu?: ContextMenuConfig;
 }
 
 export interface CanopyState {

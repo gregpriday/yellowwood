@@ -8,6 +8,7 @@ import { WorktreePanel } from './components/WorktreePanel.js';
 import { HelpModal } from './components/HelpModal.js';
 import { AppErrorBoundary } from './components/AppErrorBoundary.js';
 import type { CanopyConfig, Notification, Worktree, TreeNode, GitStatus } from './types/index.js';
+import type { CommandServices } from './commands/types.js';
 import { useCommandExecutor } from './hooks/useCommandExecutor.js';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import { useFileTree } from './hooks/useFileTree.js';
@@ -28,6 +29,9 @@ import { events, type ModalId, type ModalContextMap } from './services/events.js
 import { clearTerminalScreen } from './utils/terminal.js';
 import { ThemeProvider } from './theme/ThemeProvider.js';
 import { detectTerminalTheme } from './theme/colorPalette.js';
+import { execa } from 'execa';
+import open from 'open';
+import clipboardy from 'clipboardy';
 
 interface AppProps {
   cwd: string;
@@ -803,29 +807,55 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         activeRootPath={activeRootPath}
         commandMode={commandMode}
       />
-      {contextMenuOpen && (
-        <ContextMenu
-          path={contextMenuTarget}
-          rootPath={activeRootPath}
-          position={contextMenuPosition}
-          config={config}
-          onClose={() => events.emit('ui:modal:close', { id: 'context-menu' })}
-          onAction={(actionType, result) => {
-            if (result.success) {
-              events.emit('ui:notify', {
-                type: 'success',
-                message: result.message || 'Action completed',
-              });
-            } else {
-              events.emit('ui:notify', {
-                type: 'error',
-                message: `Failed to switch worktree: ${result.message || 'Unknown error'}`,
-              });
+      {contextMenuOpen && (() => {
+        // Create CommandServices object for context menu
+        const contextMenuServices: CommandServices = {
+          ui: {
+            notify: (n: Notification) => events.emit('ui:notify', n),
+            refresh: refreshTree,
+            exit: exitApp,
+          },
+          system: {
+            cwd: activeRootPath,
+            openExternal: async (path) => { await open(path); },
+            copyToClipboard: async (text) => { await clipboardy.write(text); },
+            exec: async (cmd, cmdArgs, execCwd) => {
+              const { stdout } = await execa(cmd, cmdArgs || [], { cwd: execCwd || activeRootPath });
+              return stdout;
             }
-            events.emit('ui:modal:close', { id: 'context-menu' });
-          }}
-        />
-      )}
+          },
+          state: {
+            selectedPath,
+            fileTree: rawTree,
+            expandedPaths: expandedFolders
+          }
+        };
+
+        return (
+          <ContextMenu
+            path={contextMenuTarget}
+            rootPath={activeRootPath}
+            position={contextMenuPosition}
+            config={config}
+            services={contextMenuServices}
+            onClose={() => events.emit('ui:modal:close', { id: 'context-menu' })}
+            onAction={(actionType, result) => {
+              if (result.success) {
+                events.emit('ui:notify', {
+                  type: 'success',
+                  message: result.message || 'Action completed',
+                });
+              } else {
+                events.emit('ui:notify', {
+                  type: 'error',
+                  message: `Action failed: ${result.message || 'Unknown error'}`,
+                });
+              }
+              events.emit('ui:modal:close', { id: 'context-menu' });
+            }}
+          />
+        );
+      })()}
       {isWorktreePanelOpen && (
         <WorktreePanel
           worktrees={enrichedWorktrees}
