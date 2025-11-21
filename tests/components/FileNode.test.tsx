@@ -7,7 +7,7 @@ import type { TreeNode as TreeNodeType, GitStatus } from '../../src/types/index.
 import { ThemeProvider } from '../../src/theme/ThemeProvider.js';
 
 describe('FileNode', () => {
-  const mockConfig = DEFAULT_CONFIG;
+  const mockConfig = { ...DEFAULT_CONFIG, git: { statusStyle: 'letter' as const } };
   const mockOnSelect = vi.fn();
   const mockMapGitStatusMarker = (status: GitStatus) => {
     const markers: Record<GitStatus, string> = {

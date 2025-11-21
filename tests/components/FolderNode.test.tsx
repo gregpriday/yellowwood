@@ -20,7 +20,7 @@ describe('FolderNode', () => {
     );
   };
 
-  const mockConfig = DEFAULT_CONFIG;
+  const mockConfig = { ...DEFAULT_CONFIG, git: { statusStyle: 'letter' as const } };
   const mockOnSelect = vi.fn();
   const mockOnToggle = vi.fn();
   const mockMapGitStatusMarker = (status: GitStatus) => {
