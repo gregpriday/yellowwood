@@ -8,6 +8,7 @@ import { InlineInput } from './StatusBar/InlineInput.js';
 import { useTerminalMouse } from '../hooks/useTerminalMouse.js';
 import { events } from '../services/events.js'; // Import event bus
 import type { AIStatus } from '../services/ai/index.js';
+import { useTheme } from '../theme/ThemeProvider.js';
 
 interface StatusBarProps {
   notification: Notification | null;
@@ -54,6 +55,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   aiStatus,
   isAnalyzing,
 }) => {
+  const { palette } = useTheme();
   const [input, setInput] = useState('');
   const [idleMessage, setIdleMessage] = useState<string>(() =>
     IDLE_MESSAGES[Math.floor(Math.random() * IDLE_MESSAGES.length)]
@@ -116,10 +118,10 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
   if (notification) {
      const colorMap = {
-      success: 'green',
-      info: 'blue',
-      warning: 'yellow',
-      error: 'red',
+      success: palette.git.added,
+      info: palette.alert.info,
+      warning: palette.alert.warning,
+      error: palette.alert.error,
     } as const;
 
     return (
@@ -134,9 +136,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   const filterElements: React.JSX.Element[] = [];
   if (filterQuery || filterGitStatus) {
     filterElements.push(<Text key="sep" dimColor> • </Text>);
-    if (filterQuery) filterElements.push(<Text key="fq" color="cyan">/filter: {filterQuery}</Text>);
+    if (filterQuery) filterElements.push(<Text key="fq" color={palette.accent.primary}>/filter: {filterQuery}</Text>);
     if (filterQuery && filterGitStatus) filterElements.push(<Text key="sep2" dimColor> • </Text>);
-    if (filterGitStatus) filterElements.push(<Text key="fgs" color="cyan">/git: {filterGitStatus}</Text>);
+    if (filterGitStatus) filterElements.push(<Text key="fgs" color={palette.accent.primary}>/git: {filterGitStatus}</Text>);
   }
 
   const perfElements: React.JSX.Element[] = [];
@@ -166,7 +168,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
           <Box>
             {modifiedCount > 0 ? (
-              <Text color="yellow">{modifiedCount} modified</Text>
+              <Text color={palette.git.modified}>{modifiedCount} modified</Text>
             ) : (
               <Text dimColor>No changes</Text>
             )}
@@ -177,7 +179,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
                {isAnalyzing ? (
                  <Text dimColor>🧠 Analyzing changes...</Text>
                ) : aiStatus ? (
-                 <Text color="magenta">{aiStatus.emoji} {aiStatus.description}</Text>
+                 <Text color={palette.ai.primary}>{aiStatus.emoji} {aiStatus.description}</Text>
                ) : (
                  <Box>
                    <Text dimColor>{idleMessage}</Text>

@@ -7,8 +7,14 @@
   "bin": {
     "canopy": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run copy-themes",
+    "copy-themes": "mkdir -p dist/theme/bundled && cp src/theme/bundled/*.json dist/theme/bundled/",
     "dev": "tsc --watch",
     "start": "tsx src/cli.ts",
     "test": "vitest run",

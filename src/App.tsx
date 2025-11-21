@@ -25,6 +25,8 @@ import { useCopyTree } from './hooks/useCopyTree.js';
 import { saveSessionState } from './utils/state.js';
 import { events, type ModalId, type ModalContextMap } from './services/events.js'; // Import event bus
 import { clearTerminalScreen } from './utils/terminal.js';
+import { ThemeProvider } from './theme/ThemeProvider.js';
+import { detectTerminalTheme } from './theme/colorPalette.js';
 
 interface AppProps {
   cwd: string;
@@ -186,6 +188,23 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   const { status: aiStatus, isAnalyzing } = useAIStatus(activeRootPath, gitStatus, isGitLoading);
 
   const projectIdentity = useProjectIdentity(activeRootPath);
+
+  // Resolve theme mode (auto detects terminal background)
+  const themeMode = useMemo(() => {
+    const configTheme = effectiveConfig.theme || 'auto';
+    return configTheme === 'auto' ? detectTerminalTheme() : configTheme;
+  }, [effectiveConfig.theme]);
+
+  // Extract project accent colors for theme
+  const projectAccent = useMemo(() => {
+    if (projectIdentity) {
+      return {
+        primary: projectIdentity.gradientStart,
+        secondary: projectIdentity.gradientEnd,
+      };
+    }
+    return undefined;
+  }, [projectIdentity]);
 
   // Centralized CopyTree listener (survives StatusBar unmount/hide)
   useCopyTree(activeRootPath);
@@ -501,16 +520,17 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   }
 
   return (
-    <Box flexDirection="column" height={height}>
-      <Header
-        cwd={cwd}
-        filterActive={filterActive}
-        filterQuery={filterQuery}
-        currentWorktree={currentWorktree}
-        worktreeCount={worktrees.length}
-        onWorktreeClick={() => events.emit('ui:modal:open', { id: 'worktree' })}
-        identity={projectIdentity}
-      />
+    <ThemeProvider mode={themeMode} projectAccent={projectAccent}>
+      <Box flexDirection="column" height={height}>
+        <Header
+          cwd={cwd}
+          filterActive={filterActive}
+          filterQuery={filterQuery}
+          currentWorktree={currentWorktree}
+          worktreeCount={worktrees.length}
+          onWorktreeClick={() => events.emit('ui:modal:open', { id: 'worktree' })}
+          identity={projectIdentity}
+        />
       <Box flexGrow={1}>
         <TreeView
           fileTree={fileTree}
@@ -566,6 +586,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         onClose={() => events.emit('ui:modal:close', { id: 'help' })}
       />
     </Box>
+    </ThemeProvider>
   );
 };
 

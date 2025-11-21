@@ -67,6 +67,7 @@ export interface CanopyConfig {
   editor: string;
   editorArgs: string[];
   theme: 'auto' | 'dark' | 'light';
+  customTheme?: string; // Optional path to custom theme JSON file
   showHidden: boolean;
   showGitStatus: boolean;
   showFileSize: boolean;

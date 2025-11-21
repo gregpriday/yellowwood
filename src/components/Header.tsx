@@ -4,6 +4,7 @@ import Gradient from 'ink-gradient';
 import { relative } from 'node:path';
 import type { Worktree } from '../types/index.js';
 import type { ProjectIdentity } from '../services/ai/index.js';
+import { useTheme } from '../theme/ThemeProvider.js';
 
 interface HeaderProps {
   cwd: string;
@@ -24,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   onWorktreeClick,
   identity,
 }) => {
+  const { palette } = useTheme();
   // Note: Keyboard handling for worktree actions (w/W keys) is delegated to
   // the global useKeyboard hook to avoid conflicts with the global keyboard contract
 
@@ -70,7 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
           <Text dimColor> • </Text>
           <Text dimColor>wt </Text>
           <Text
-            color="cyan"
+            color={palette.accent.primary}
             bold={onWorktreeClick !== undefined}
             underline={onWorktreeClick !== undefined}
           >
@@ -84,12 +86,12 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Breadcrumb path segments */}
       {isRoot ? (
-        <Text color="blue">/</Text>
+        <Text color={palette.text.secondary}>/</Text>
       ) : (
         <>
           {pathSegments.map((segment, index) => (
             <React.Fragment key={index}>
-              <Text color={index === pathSegments.length - 1 ? 'white' : 'blue'}>
+              <Text color={index === pathSegments.length - 1 ? palette.text.primary : palette.text.secondary}>
                 {segment}
               </Text>
               {index < pathSegments.length - 1 && (
@@ -103,9 +105,9 @@ export const Header: React.FC<HeaderProps> = ({
       {filterActive && (
         <>
           <Text dimColor> [</Text>
-          <Text color="yellow">*</Text>
+          <Text color={palette.alert.warning}>*</Text>
           <Text dimColor>] </Text>
-          <Text color="cyan">{filterQuery}</Text>
+          <Text color={palette.accent.primary}>{filterQuery}</Text>
         </>
       )}
     </Box>

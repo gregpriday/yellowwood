@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { events } from '../services/events.js';
 import type { Worktree } from '../types/index.js';
+import { useTheme } from '../theme/ThemeProvider.js';
 
 export interface WorktreePanelProps {
   /** All available worktrees */
@@ -31,6 +32,7 @@ export const WorktreePanel: React.FC<WorktreePanelProps> = ({
   onSelect,
   onClose,
 }) => {
+  const { palette } = useTheme();
   // Find initial cursor position (current worktree)
   const initialCursor = worktrees.findIndex(wt => wt.id === activeWorktreeId);
   const [cursor, setCursor] = useState(initialCursor >= 0 ? initialCursor : 0);
@@ -95,20 +97,20 @@ export const WorktreePanel: React.FC<WorktreePanelProps> = ({
       <Box
         flexDirection="column"
         borderStyle="double"
-        borderColor="cyan"
+        borderColor={palette.chrome.border}
         paddingX={2}
         paddingY={1}
         width={60}
       >
         <Box marginBottom={1}>
-          <Text bold color="cyan">
+          <Text bold color={palette.accent.primary}>
             Git Worktrees
           </Text>
         </Box>
         <Box marginBottom={1}>
           <Text dimColor>No worktrees found</Text>
         </Box>
-        <Box borderStyle="single" borderColor="gray" paddingX={1}>
+        <Box borderStyle="single" borderColor={palette.chrome.separator} paddingX={1}>
           <Text dimColor>ESC: Close</Text>
         </Box>
       </Box>
@@ -119,14 +121,14 @@ export const WorktreePanel: React.FC<WorktreePanelProps> = ({
     <Box
       flexDirection="column"
       borderStyle="double"
-      borderColor="cyan"
+      borderColor={palette.chrome.border}
       paddingX={2}
       paddingY={1}
       width={60}
     >
       {/* Header */}
       <Box marginBottom={1}>
-        <Text bold color="cyan">
+        <Text bold color={palette.accent.primary}>
           Git Worktrees
         </Text>
       </Box>
@@ -140,15 +142,15 @@ export const WorktreePanel: React.FC<WorktreePanelProps> = ({
           return (
             <Box key={worktree.id} paddingX={1}>
               {/* Current indicator */}
-              <Text color={isActive ? 'green' : 'gray'}>
+              <Text color={isActive ? palette.semantic.srcFolder : palette.text.tertiary}>
                 {isActive ? '→ ' : '  '}
               </Text>
 
               {/* Worktree name, branch, and path */}
               <Box flexGrow={1}>
                 <Text
-                  backgroundColor={isSelected ? 'blue' : undefined}
-                  color={isSelected ? 'white' : 'gray'}
+                  backgroundColor={isSelected ? palette.selection.background : undefined}
+                  color={isSelected ? palette.selection.text : palette.text.secondary}
                 >
                   {worktree.name.padEnd(15)}
                   {worktree.branch ? ` [${worktree.branch}]` : ''}
@@ -162,7 +164,7 @@ export const WorktreePanel: React.FC<WorktreePanelProps> = ({
       </Box>
 
       {/* Footer with hints */}
-      <Box borderStyle="single" borderColor="gray" paddingX={1}>
+      <Box borderStyle="single" borderColor={palette.chrome.separator} paddingX={1}>
         <Text dimColor>↑↓: Navigate • Enter: Switch • ESC: Close</Text>
       </Box>
     </Box>
