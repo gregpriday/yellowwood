@@ -218,6 +218,19 @@ function mergeConfigs(...configs: Partial<CanopyConfig>[]): CanopyConfig {
         continue;
       }
 
+      if (
+        typedKey === 'recentActivity' &&
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+      ) {
+        merged[typedKey] = {
+          ...merged.recentActivity,
+          ...value,
+        } as typeof merged.recentActivity;
+        continue;
+      }
+
       (merged as any)[typedKey] = value;
     }
   }
@@ -412,6 +425,23 @@ function validateConfig(config: unknown): CanopyConfig {
         if (typeof c.worktrees.refreshIntervalMs !== 'number' || c.worktrees.refreshIntervalMs < 0) {
           errors.push('config.worktrees.refreshIntervalMs must be a non-negative number');
         }
+      }
+    }
+  }
+
+  // Validate recentActivity (optional field)
+  if (c.recentActivity !== undefined) {
+    if (!c.recentActivity || typeof c.recentActivity !== 'object') {
+      errors.push('config.recentActivity must be an object');
+    } else {
+      if (typeof c.recentActivity.enabled !== 'boolean') {
+        errors.push('config.recentActivity.enabled must be a boolean');
+      }
+      if (typeof c.recentActivity.windowMinutes !== 'number' || c.recentActivity.windowMinutes <= 0) {
+        errors.push('config.recentActivity.windowMinutes must be a positive number');
+      }
+      if (typeof c.recentActivity.maxEntries !== 'number' || c.recentActivity.maxEntries <= 0) {
+        errors.push('config.recentActivity.maxEntries must be a positive number');
       }
     }
   }
