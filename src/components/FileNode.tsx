@@ -7,6 +7,7 @@ import { getFileColor } from '../utils/nodeStyling.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { getStyledTreeGuide } from '../utils/treeGuides.js';
 import { isOnActivePath } from '../utils/pathAncestry.js';
+import { GitIndicator } from '../utils/gitIndicators.js';
 
 interface FileNodeProps {
   node: TreeNodeType & Partial<FlattenedNode>;
@@ -40,9 +41,17 @@ export function FileNode({
   const icon = getFileIcon(node.name);
 
   // 2. Git Status Logic
-  const gitMarker = config.showGitStatus && node.gitStatus
-      ? ` ${mapGitStatusMarker(node.gitStatus)}`
-      : '';
+  const useGlyphStyle = config.git?.statusStyle !== 'letter';
+  const gitMarker = config.showGitStatus && node.gitStatus ? (
+    useGlyphStyle ? (
+      <>
+        {' '}
+        <GitIndicator status={node.gitStatus} />
+      </>
+    ) : (
+      ` ${mapGitStatusMarker(node.gitStatus)}`
+    )
+  ) : null;
   const isGitModified = config.showGitStatus && !!node.gitStatus;
 
   // 3. Determine Base Color

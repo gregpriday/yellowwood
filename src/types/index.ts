@@ -139,6 +139,11 @@ export interface CanopyConfig {
   };
   recentActivity?: RecentActivityConfig;
   contextMenu?: ContextMenuConfig;
+  git?: {
+    statusStyle?: 'letter' | 'glyph'; // 'letter' = M/A/D, 'glyph' = ● (default: 'glyph')
+    folderHeatMap?: boolean; // Enable folder heat coloring (default: true)
+    heatMapIntensity?: 'subtle' | 'normal' | 'intense'; // Heat scaling (default: 'normal')
+  };
 }
 
 export interface CanopyState {
@@ -214,5 +219,10 @@ export const DEFAULT_CONFIG: CanopyConfig = {
     enabled: true,             // Enabled by default
     windowMinutes: 10,         // Keep events from last 10 minutes
     maxEntries: 50,            // Maximum 50 events in buffer
+  },
+  git: {
+    statusStyle: 'glyph',      // Use color-coded glyphs by default
+    folderHeatMap: true,       // Enable heat mapping by default
+    heatMapIntensity: 'normal', // Normal intensity by default
   },
 };
