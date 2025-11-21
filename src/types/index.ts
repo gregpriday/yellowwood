@@ -124,6 +124,8 @@ export interface CanopyConfig {
     leftClickAction?: 'open' | 'select';
     compactMode?: boolean;
     showStatusBar?: boolean;
+    activePathHighlight?: boolean;
+    activePathColor?: 'cyan' | 'blue' | 'green';
   };
   worktrees?: {
     enable: boolean;           // Master toggle for worktree features
@@ -194,6 +196,8 @@ export const DEFAULT_CONFIG: CanopyConfig = {
     leftClickAction: 'open',
     compactMode: true,
     showStatusBar: true,
+    activePathHighlight: true,
+    activePathColor: 'cyan',
   },
   worktrees: {
     enable: true,              // Enabled by default for backwards compatibility
