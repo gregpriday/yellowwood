@@ -74,6 +74,7 @@ export const TreeView: React.FC<TreeViewProps> = ({
 
   const prevFlattenedTreeRef = useRef<FlattenedNode[]>(flattenedTree);
   const prevSelectedPathRef = useRef<string>(selectedPath);
+  const prevNodeViewportHeightRef = useRef<number>(nodeViewportHeight);
 
   // Calculate visible window (memoized) using node-aware viewport height
   const visibleWindow = useMemo(() => {
@@ -126,14 +127,26 @@ export const TreeView: React.FC<TreeViewProps> = ({
     prevScrollOffsetRef.current = scrollOffset;
   }, [scrollOffset]);
 
-  // Auto-scroll to keep cursor visible when selection changes (not when tree structure changes)
-  // Only trigger when selectedPath actually changes, not when cursorIndex shifts due to mutations
+  // Auto-scroll to keep cursor visible when selection changes or viewport resizes
+  // Only trigger when selectedPath changes, viewport height changes, or selection drifts off-screen
   useEffect(() => {
     const prevSelectedPath = prevSelectedPathRef.current;
+    const prevViewportHeight = prevNodeViewportHeightRef.current;
     prevSelectedPathRef.current = selectedPath;
+    prevNodeViewportHeightRef.current = nodeViewportHeight;
 
-    // Only auto-scroll if the selection path actually changed
-    if (prevSelectedPath === selectedPath) {
+    const selectionChanged = prevSelectedPath !== selectedPath;
+    const viewportResized = prevViewportHeight !== nodeViewportHeight;
+
+    // Check if selection is currently visible
+    const isSelectionVisible = cursorIndex >= scrollOffset &&
+                                cursorIndex < scrollOffset + nodeViewportHeight;
+
+    // Auto-scroll if:
+    // 1. Selection path changed (user navigated)
+    // 2. Viewport height changed (terminal resize)
+    // 3. Selection drifted off-screen due to tree mutations
+    if (!selectionChanged && !viewportResized && isSelectionVisible) {
       return;
     }
 
@@ -148,7 +161,7 @@ export const TreeView: React.FC<TreeViewProps> = ({
       }
       return strictClamp(nextOffset, flattenedTree.length);
     });
-  }, [selectedPath, cursorIndex, nodeViewportHeight, strictClamp, flattenedTree.length]);
+  }, [selectedPath, cursorIndex, nodeViewportHeight, scrollOffset, strictClamp, flattenedTree.length]);
 
   const emitSelect = useCallback((path: string) => {
     events.emit('nav:select', { path });
