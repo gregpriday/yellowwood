@@ -1,0 +1,42 @@
+{
+  "text": {
+    "primary": "black",
+    "secondary": "#333333",
+    "tertiary": "#666666"
+  },
+  "chrome": {
+    "border": "#CCCCCC",
+    "guide": "#DDDDDD",
+    "separator": "#E5E5E5"
+  },
+  "selection": {
+    "background": "#0066CC",
+    "text": "#00AAFF"
+  },
+  "accent": {
+    "primary": "#42b883",
+    "secondary": "#258b5f"
+  },
+  "git": {
+    "modified": "#CC8800",
+    "added": "#008855",
+    "deleted": "#CC3333",
+    "untracked": "#666666",
+    "ignored": "#999999"
+  },
+  "ai": {
+    "primary": "#AA00AA",
+    "secondary": "#8B008B"
+  },
+  "alert": {
+    "error": "#CC0000",
+    "warning": "#CC8800",
+    "info": "#0088AA"
+  },
+  "semantic": {
+    "srcFolder": "#008855",
+    "testFolder": "#CC8800",
+    "buildFolder": "#999999",
+    "configFile": "#CC3333"
+  }
+}

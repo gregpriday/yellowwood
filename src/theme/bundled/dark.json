@@ -1,0 +1,42 @@
+{
+  "text": {
+    "primary": "white",
+    "secondary": "#CCCCCC",
+    "tertiary": "#808080"
+  },
+  "chrome": {
+    "border": "#4A4A4A",
+    "guide": "#3A3A3A",
+    "separator": "#333333"
+  },
+  "selection": {
+    "background": "blue",
+    "text": "cyan"
+  },
+  "accent": {
+    "primary": "#42b883",
+    "secondary": "#258b5f"
+  },
+  "git": {
+    "modified": "#FFD700",
+    "added": "#00FA9A",
+    "deleted": "#FF6347",
+    "untracked": "#A9A9A9",
+    "ignored": "#696969"
+  },
+  "ai": {
+    "primary": "magenta",
+    "secondary": "#DA70D6"
+  },
+  "alert": {
+    "error": "#FF4444",
+    "warning": "#FFD700",
+    "info": "cyan"
+  },
+  "semantic": {
+    "srcFolder": "#00FA9A",
+    "testFolder": "#FFD700",
+    "buildFolder": "#696969",
+    "configFile": "#FF6347"
+  }
+}
