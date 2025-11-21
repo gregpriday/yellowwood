@@ -5,6 +5,8 @@ import type { FlattenedNode } from '../utils/treeViewVirtualization.js';
 import { getFolderIcon } from '../utils/fileIcons.js';
 import { getFolderStyle } from '../utils/nodeStyling.js';
 import { useTheme } from '../theme/ThemeProvider.js';
+import { GitIndicator } from '../utils/gitIndicators.js';
+import { getFolderHeatColor, getHeatIndicator } from '../utils/folderHeatMap.js';
 
 interface FolderNodeProps {
   node: TreeNodeType & Partial<FlattenedNode>;
@@ -25,9 +27,17 @@ export function FolderNode({
   const treeGuide = ' '.repeat(node.depth * config.treeIndent);
   const icon = getFolderIcon(node.name, node.expanded || false);
 
-  const gitMarker = config.showGitStatus && node.gitStatus
-      ? ` ${mapGitStatusMarker(node.gitStatus)}`
-      : '';
+  const useGlyphStyle = config.git?.statusStyle !== 'letter';
+  const gitMarker = config.showGitStatus && node.gitStatus ? (
+    useGlyphStyle ? (
+      <>
+        {' '}
+        <GitIndicator status={node.gitStatus} />
+      </>
+    ) : (
+      ` ${mapGitStatusMarker(node.gitStatus)}`
+    )
+  ) : null;
 
   // 1. Determine Style
   // Standard git/selection logic first
@@ -47,6 +57,19 @@ export function FolderNode({
   // 3. Recursive Git Count (Hidden Changes)
   // Only show if collapsed and has changes > 0
   const showHiddenChanges = !node.expanded && (node.recursiveGitCount || 0) > 0;
+  const changeCount = node.recursiveGitCount || 0;
+
+  // 4. Apply heat mapping to folder color (if git status enabled and has changes)
+  // Only apply heat if not selected and no direct git status on folder
+  const heatMapEnabled = config.git?.folderHeatMap !== false;
+  if (config.showGitStatus && heatMapEnabled && !selected && !node.gitStatus && changeCount > 0) {
+    color = getFolderHeatColor(changeCount, {
+      baseColor: color,
+      intensity: config.git?.heatMapIntensity ?? 'normal',
+    });
+  }
+
+  const heatIndicator = showHiddenChanges ? getHeatIndicator(changeCount) : '';
 
   // 4. Render Selected State (Inverted)
   if (selected) {
@@ -72,7 +95,10 @@ export function FolderNode({
         {icon} {node.name}
       </Text>
       {showHiddenChanges && (
-        <Text color={palette.text.tertiary} dimColor> [{node.recursiveGitCount}]</Text>
+        <Text color={color} dimColor>
+          {' '}
+          {heatIndicator}[{node.recursiveGitCount}]
+        </Text>
       )}
       <Text color={color}>
         {gitMarker}
