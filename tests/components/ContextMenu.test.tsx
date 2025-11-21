@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ContextMenu } from '../../src/components/ContextMenu.js';
 import { DEFAULT_CONFIG } from '../../src/types/index.js';
 import type { CanopyConfig } from '../../src/types/index.js';
+import type { CommandServices } from '../../src/commands/types.js';
 import * as fileOpener from '../../src/utils/fileOpener.js';
 import * as clipboard from '../../src/utils/clipboard.js';
 import { execa } from 'execa';
@@ -19,11 +20,31 @@ describe('ContextMenu', () => {
 	const mockOnClose = vi.fn();
 	const mockOnAction = vi.fn();
 
+	const mockServices: CommandServices = {
+		ui: {
+			notify: vi.fn(),
+			refresh: vi.fn(),
+			exit: vi.fn(),
+		},
+		system: {
+			cwd: '/Users/foo/project',
+			openExternal: vi.fn(),
+			copyToClipboard: vi.fn(),
+			exec: vi.fn(),
+		},
+		state: {
+			selectedPath: null,
+			fileTree: [],
+			expandedPaths: new Set(),
+		},
+	};
+
 	const defaultProps = {
 		path: '/Users/foo/project/src/App.tsx',
 		rootPath: '/Users/foo/project',
 		position: { x: 10, y: 5 },
 		config: DEFAULT_CONFIG,
+		services: mockServices,
 		onClose: mockOnClose,
 		onAction: mockOnAction,
 	};
@@ -42,9 +63,10 @@ describe('ContextMenu', () => {
 
 		expect(lastFrame()).toContain('Open');
 		expect(lastFrame()).toContain('Open with...');
+		expect(lastFrame()).toContain('Copy filename');
 		expect(lastFrame()).toContain('Copy absolute path');
 		expect(lastFrame()).toContain('Copy relative path');
-		expect(lastFrame()).toContain('Reveal in file manager');
+		expect(lastFrame()).toContain('Reveal');
 	});
 
 	it('hides "Open" and "Open with..." for directories', () => {
@@ -54,8 +76,11 @@ describe('ContextMenu', () => {
 			<ContextMenu {...defaultProps} path="/Users/foo/project/src" />
 		);
 
-		expect(lastFrame()).not.toContain('Open');
+		// Should not have "📂 Open" file action (but may have "Open Terminal")
+		expect(lastFrame()).not.toContain('📂 Open');
 		expect(lastFrame()).not.toContain('Open with...');
+		// Should have folder-specific actions
+		expect(lastFrame()).toContain('CopyTree');
 		expect(lastFrame()).toContain('Copy absolute path');
 	});
 
@@ -76,7 +101,7 @@ describe('ContextMenu', () => {
 		);
 		expect(mockOnAction).toHaveBeenCalledWith('open', {
 			success: true,
-			message: expect.stringContaining('Opened'),
+			message: expect.stringContaining('Open'),
 		});
 		expect(mockOnClose).toHaveBeenCalled();
 	});
@@ -115,10 +140,13 @@ describe('ContextMenu', () => {
 			config,
 			config.openers.byExtension['.tsx']
 		);
-		expect(mockOnAction).toHaveBeenCalledWith('ext:.tsx', {
-			success: true,
-			message: expect.stringContaining('Opened'),
-		});
+		expect(mockOnAction).toHaveBeenCalledWith(
+			expect.stringMatching(/open-ext-.tsx/),
+			{
+				success: true,
+				message: expect.stringContaining('vim'),
+			}
+		);
 		expect(mockOnClose).toHaveBeenCalled();
 	});
 
@@ -139,8 +167,9 @@ describe('ContextMenu', () => {
 	it('includes reveal in file manager in menu items', () => {
 		const { lastFrame } = render(<ContextMenu {...defaultProps} />);
 
-		// Verify menu item exists (platform-specific behavior tested separately)
-		expect(lastFrame()).toContain('Reveal in file manager');
+		// Verify menu item exists (platform-specific: "Reveal in Finder" on macOS, etc.)
+		// The label is platform-specific, so we just check for "Reveal"
+		expect(lastFrame()).toContain('Reveal');
 	});
 
 	it('menu adapts to file vs directory', () => {
@@ -149,12 +178,14 @@ describe('ContextMenu', () => {
 		const { lastFrame: fileFrame } = render(<ContextMenu {...defaultProps} />);
 		expect(fileFrame()).toContain('Open');
 
-		// For directories: excludes Open
+		// For directories: includes folder-specific actions
 		vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => true } as any);
 		const { lastFrame: dirFrame } = render(
 			<ContextMenu {...defaultProps} path="/Users/foo/project/src" />
 		);
-		expect(dirFrame()).not.toContain('Open');
+		// Folders should have CopyTree and Terminal actions
+		expect(dirFrame()).toContain('Run CopyTree');
+		expect(dirFrame()).toContain('Terminal');
 		expect(dirFrame()).toContain('Copy absolute path');
 	});
 

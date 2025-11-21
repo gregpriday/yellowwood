@@ -121,25 +121,9 @@ export function useMouse(options: UseMouseOptions): UseMouseReturn {
           // Directories: always toggle expansion
           onToggle(node.path);
         } else {
-          // Files: Copy path logic with X-coordinate bounds check
-          // 1. Calculate Start X: Depth * Indent
-          const indent = config.treeIndent || 2;
-          const startX = node.depth * indent;
-
-          // 2. Calculate End X: Start + Icon (2 chars) + Name length
-          // The icon is roughly 2 chars (Icon glyph + space)
-          const endX = startX + 2 + node.name.length;
-
-          // 3. Only trigger if click is within the Icon or Name
-          if (event.x >= startX && event.x <= endX) {
-            events.emit('file:copy-path', { path: node.path });
-          }
+          // Files: select the file (removed copy-path behavior)
+          onSelect(node.path);
         }
-      }
-
-      // Middle-click: Copy path
-      if (event.button === 'middle') {
-        events.emit('file:copy-path', { path: node.path });
       }
     },
     [getRowIndexFromY, fileTree, onToggle, onOpen, onSelect, onContextMenu, config],
