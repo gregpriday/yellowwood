@@ -15,6 +15,7 @@ import { useAppLifecycle } from './hooks/useAppLifecycle.js';
 import { useViewportHeight } from './hooks/useViewportHeight.js';
 import { openFile } from './utils/fileOpener.js';
 import { countTotalFiles } from './utils/fileTree.js';
+import { copyFilePath } from './utils/clipboard.js';
 import { useWatcher } from './hooks/useWatcher.js';
 import path from 'path';
 import { useGitStatus } from './hooks/useGitStatus.js';
@@ -117,6 +118,29 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   const [activeWorktreeId, setActiveWorktreeId] = useState<string | null>(initialActiveWorktreeId);
   const [activeRootPath, setActiveRootPath] = useState<string>(initialActiveRootPath);
   const selectedPathRef = useRef<string | null>(null);
+
+  // Listen for file:copy-path events
+  useEffect(() => {
+    return events.on('file:copy-path', async (payload) => {
+      const pathToCopy = payload.path || selectedPathRef.current;
+      if (!pathToCopy) return;
+
+      try {
+        // Normalize paths to absolute (copyFilePath requires absolute paths)
+        const normalizedRoot = path.isAbsolute(activeRootPath)
+          ? activeRootPath
+          : path.resolve(activeRootPath);
+        const normalizedPath = path.isAbsolute(pathToCopy)
+          ? pathToCopy
+          : path.resolve(normalizedRoot, pathToCopy);
+
+        await copyFilePath(normalizedPath, normalizedRoot, true); // Use relative paths
+        events.emit('ui:notify', { type: 'success', message: 'Path copied to clipboard' });
+      } catch (error) {
+        events.emit('ui:notify', { type: 'error', message: `Failed to copy path: ${error instanceof Error ? error.message : 'Unknown error'}` });
+      }
+    });
+  }, [activeRootPath]);
 
   // Git visibility state
   const [showGitMarkers, setShowGitMarkers] = useState(config.showGitStatus && !noGit);
@@ -403,6 +427,18 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
 
   const handleQuit = async () => {
     events.emit('sys:quit');
+
+    // Save session state before exiting
+    if (activeWorktreeId && selectedPath) {
+      await saveSessionState(activeWorktreeId, {
+        selectedPath,
+        expandedFolders: Array.from(expandedFolders),
+        timestamp: Date.now(),
+      }).catch((err) => {
+        console.error('Error saving session state on quit:', err);
+      });
+    }
+
     clearGitStatus();
     clearTerminalScreen();
     exit();
@@ -503,7 +539,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
           expandedPaths={expandedFolders}
           disableMouse={anyModalOpen}
           viewportHeight={viewportHeight}
-          // onCopyPath={handleCopySelectedPath} // Removed
         />
       </Box>
       <StatusBar
