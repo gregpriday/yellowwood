@@ -215,6 +215,12 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
       return;
     }
 
+    // Recent Activity
+    if (input === 'a' && !key.shift && !key.ctrl && !key.meta) {
+      events.emit('ui:modal:open', { id: 'recent-activity' });
+      return;
+    }
+
     // UI Actions
     if (input === 'r' && handlers.onRefresh) {
       handlers.onRefresh();

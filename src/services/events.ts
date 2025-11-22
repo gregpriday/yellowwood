@@ -1,12 +1,13 @@
 import { EventEmitter } from 'events';
 import type { NotificationType } from '../types/index.js';
 
-export type ModalId = 'help' | 'worktree' | 'context-menu' | 'command-bar';
+export type ModalId = 'help' | 'worktree' | 'context-menu' | 'command-bar' | 'recent-activity';
 export interface ModalContextMap {
   help: undefined;
   worktree: undefined;
   'context-menu': { path: string; position?: { x: number; y: number } };
   'command-bar': { initialInput?: string };
+  'recent-activity': undefined;
 }
 
 // 1. Define Payload Types
