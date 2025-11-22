@@ -5,6 +5,7 @@ import { WorktreeOverview, sortWorktrees } from './components/WorktreeOverview.j
 import { StatusBar } from './components/StatusBar.js';
 import { ContextMenu } from './components/ContextMenu.js';
 import { WorktreePanel } from './components/WorktreePanel.js';
+import { ProfileSelector } from './components/ProfileSelector.js';
 import { HelpModal } from './components/HelpModal.js';
 import { AppErrorBoundary } from './components/AppErrorBoundary.js';
 import type { CanopyConfig, Notification, Worktree, TreeNode, GitStatus } from './types/index.js';
@@ -53,6 +54,7 @@ const MODAL_CLOSE_PRIORITY: ModalId[] = [
   'context-menu',
   'worktree',
   'command-bar',
+  'profile-selector',
   'recent-activity',
 ];
 
@@ -261,6 +263,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   const showHelpModal = activeModals.has('help');
   const contextMenuOpen = activeModals.has('context-menu');
   const isRecentActivityOpen = activeModals.has('recent-activity');
+  const isProfileSelectorOpen = activeModals.has('profile-selector');
   const worktreesRef = useRef<Worktree[]>([]);
   worktreesRef.current = worktreesWithStatus;
   // Sync active worktree/path from lifecycle on initialization
@@ -417,8 +420,14 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     if (!target) {
       return;
     }
-    events.emit('ui:modal:open', { id: 'command-bar', context: { initialInput: `/copytree ${target.branch ?? target.name} ` } });
+    events.emit('ui:modal:open', { id: 'profile-selector', context: { worktreeId: target.id } });
   }, [sortedWorktrees]);
+
+  const handleProfileSelect = useCallback((profileName: string) => {
+    setLastCopyProfile(profileName);
+    events.emit('ui:notify', { type: 'info', message: `Active profile: ${profileName}` });
+    events.emit('ui:modal:close', { id: 'profile-selector' });
+  }, []);
 
   useEffect(() => {
     const handleOpen = events.on('ui:modal:open', ({ id, context }) => {
@@ -1068,6 +1077,20 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         commandMode={commandMode}
         isIdle={isIdle}
       />
+      {isProfileSelectorOpen && (
+        <Box
+          flexDirection="row"
+          justifyContent="center"
+          marginTop={1}
+        >
+          <ProfileSelector
+            profiles={config.copytreeProfiles || {}}
+            currentProfile={lastCopyProfile}
+            onSelect={handleProfileSelect}
+            onClose={() => events.emit('ui:modal:close', { id: 'profile-selector' })}
+          />
+        </Box>
+      )}
       {contextMenuOpen && (() => {
         // Create CommandServices object for context menu
         const contextMenuServices: CommandServices = {
