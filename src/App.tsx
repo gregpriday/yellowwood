@@ -373,6 +373,17 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     return activeRootPath;
   }, [viewMode, focusedWorktreeId, worktreesWithStatus, activeRootPath]);
 
+  // Update active worktree when tree mode switches to a different focused worktree
+  useEffect(() => {
+    if (viewMode === 'tree' && focusedWorktreeId && focusedWorktreeId !== activeWorktreeId) {
+      const focusedWorktree = worktreesWithStatus.find(wt => wt.id === focusedWorktreeId);
+      if (focusedWorktree) {
+        setActiveWorktreeId(focusedWorktree.id);
+        setActiveRootPath(focusedWorktree.path);
+      }
+    }
+  }, [viewMode, focusedWorktreeId, activeWorktreeId, worktreesWithStatus]);
+
   // Centralized CopyTree listener (survives StatusBar unmount/hide)
   useCopyTree(activeRootPath, effectiveConfig);
 
@@ -997,7 +1008,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     worktrees: sortedWorktrees,
     focusedWorktreeId,
     expandedWorktreeIds,
-    isModalOpen: anyModalOpen,
+    isModalOpen: anyModalOpen || viewMode !== 'dashboard', // Disable dashboard nav when not in dashboard mode
     viewportSize: dashboardViewportSize,
     onFocusChange: setFocusedWorktreeId,
     onToggleExpand: handleToggleExpandWorktree,
