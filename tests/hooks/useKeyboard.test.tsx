@@ -140,14 +140,14 @@ describe('useKeyboard', () => {
   });
 
   describe('command/filter actions', () => {
-    it('emits modal open for command bar when / is pressed', async () => {
+    it('emits modal open for fuzzy search when / is pressed', async () => {
       const { spy, unsubscribe } = listen('ui:modal:open');
       const { stdin } = render(<TestComponent handlers={{}} />);
       await waitForInk(stdin);
 
       await writeKey(stdin, '/');
 
-      expect(spy).toHaveBeenCalledWith({ id: 'command-bar', context: undefined });
+      expect(spy).toHaveBeenCalledWith({ id: 'fuzzy-search', context: { initialQuery: '' } });
       unsubscribe();
     });
 

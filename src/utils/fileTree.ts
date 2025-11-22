@@ -256,7 +256,7 @@ async function createTreeNode(
  * Determine if a file should be included in the tree.
  * Checks hidden files, gitignore patterns, and custom ignore patterns.
  */
-function shouldIncludeFile(
+export function shouldIncludeFile(
   filePath: string,
   fileName: string,
   config: CanopyConfig,
@@ -392,7 +392,7 @@ function sortNodes(nodes: TreeNode[], config: CanopyConfig): TreeNode[] {
  * Load and parse .gitignore files from the root directory.
  * Returns array of gitignore patterns.
  */
-async function loadGitignorePatterns(rootPath: string): Promise<string[]> {
+export async function loadGitignorePatterns(rootPath: string): Promise<string[]> {
   const gitignorePath = path.join(rootPath, '.gitignore');
 
   try {

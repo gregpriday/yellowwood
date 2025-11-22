@@ -244,6 +244,19 @@ function mergeConfigs(...configs: Partial<CanopyConfig>[]): CanopyConfig {
         continue;
       }
 
+      if (
+        typedKey === 'search' &&
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+      ) {
+        merged[typedKey] = {
+          ...merged.search,
+          ...value,
+        } as typeof merged.search;
+        continue;
+      }
+
       (merged as any)[typedKey] = value;
     }
   }
@@ -482,6 +495,23 @@ function validateConfig(config: unknown): CanopyConfig {
       }
       if (typeof c.recentActivity.maxEntries !== 'number' || c.recentActivity.maxEntries <= 0) {
         errors.push('config.recentActivity.maxEntries must be a positive number');
+      }
+    }
+  }
+
+  // Validate search (optional field)
+  if (c.search !== undefined) {
+    if (!c.search || typeof c.search !== 'object') {
+      errors.push('config.search must be an object');
+    } else {
+      if (c.search.defaultAction !== undefined && !['open', 'copy'].includes(c.search.defaultAction)) {
+        errors.push('config.search.defaultAction must be "open" or "copy"');
+      }
+      if (c.search.limit !== undefined && (typeof c.search.limit !== 'number' || c.search.limit <= 0)) {
+        errors.push('config.search.limit must be a positive number');
+      }
+      if (c.search.respectGitignore !== undefined && typeof c.search.respectGitignore !== 'boolean') {
+        errors.push('config.search.respectGitignore must be a boolean');
       }
     }
   }
