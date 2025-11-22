@@ -7,6 +7,7 @@ import { ContextMenu } from './components/ContextMenu.js';
 import { WorktreePanel } from './components/WorktreePanel.js';
 import { ProfileSelector } from './components/ProfileSelector.js';
 import { HelpModal } from './components/HelpModal.js';
+import { FuzzySearchModal } from './components/FuzzySearchModal.js';
 import { AppErrorBoundary } from './components/AppErrorBoundary.js';
 import type { CanopyConfig, Notification, Worktree, TreeNode, GitStatus } from './types/index.js';
 import type { CommandServices } from './commands/types.js';
@@ -133,6 +134,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   // Filter state - initialize from CLI if provided
   const [filterActive, setFilterActive] = useState(!!initialFilter);
   const [filterQuery, setFilterQuery] = useState(initialFilter || '');
+  const [fuzzySearchQuery, setFuzzySearchQuery] = useState('');
 
   // Context menu state
   const [contextMenuTarget, setContextMenuTarget] = useState<string>('');
@@ -264,6 +266,15 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   const contextMenuOpen = activeModals.has('context-menu');
   const isRecentActivityOpen = activeModals.has('recent-activity');
   const isProfileSelectorOpen = activeModals.has('profile-selector');
+  const isFuzzySearchOpen = activeModals.has('fuzzy-search');
+
+  // Reset fuzzy search query when modal closes
+  useEffect(() => {
+    if (!isFuzzySearchOpen) {
+      setFuzzySearchQuery('');
+    }
+  }, [isFuzzySearchOpen]);
+
   const worktreesRef = useRef<Worktree[]>([]);
   worktreesRef.current = worktreesWithStatus;
   // Sync active worktree/path from lifecycle on initialization
@@ -925,6 +936,50 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     events.emit('nav:select', { path: absolutePath });
   }, [activeRootPath]);
 
+  // Handle fuzzy search result selection
+  const handleFuzzySearchResult = useCallback(async (relativePath: string, action: 'copy' | 'open') => {
+    // Close the modal
+    events.emit('ui:modal:close', { id: 'fuzzy-search' });
+
+    // Convert relative path to absolute based on the focused or active worktree
+    const targetWorktree = focusedWorktreeId
+      ? worktreesWithStatus.find(wt => wt.id === focusedWorktreeId)
+      : currentWorktree;
+
+    if (!targetWorktree) {
+      events.emit('ui:notify', {
+        type: 'error',
+        message: 'No worktree selected'
+      });
+      return;
+    }
+
+    const absolutePath = path.join(targetWorktree.path, relativePath);
+
+    try {
+      if (action === 'copy') {
+        // Copy path to clipboard (copy as relative path)
+        await copyFilePath(absolutePath, targetWorktree.path, true);
+        events.emit('ui:notify', {
+          type: 'success',
+          message: `Copied: ${relativePath}`,
+        });
+      } else {
+        // Open file
+        await openFile(absolutePath, config);
+        events.emit('ui:notify', {
+          type: 'success',
+          message: `Opened: ${relativePath}`,
+        });
+      }
+    } catch (error) {
+      events.emit('ui:notify', {
+        type: 'error',
+        message: `Failed to ${action} file: ${(error as Error).message}`,
+      });
+    }
+  }, [activeRootPath, config, currentWorktree, focusedWorktreeId, worktreesWithStatus]);
+
   // handleOpenSelectedFile removed
 
   // handleCopySelectedPath removed
@@ -1169,6 +1224,16 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       <HelpModal
         visible={showHelpModal}
         onClose={() => events.emit('ui:modal:close', { id: 'help' })}
+      />
+      <FuzzySearchModal
+        visible={isFuzzySearchOpen}
+        searchQuery={fuzzySearchQuery}
+        worktrees={worktreesWithStatus}
+        focusedWorktreeId={focusedWorktreeId}
+        config={config}
+        onSelectResult={handleFuzzySearchResult}
+        onClose={() => events.emit('ui:modal:close', { id: 'fuzzy-search' })}
+        onQueryChange={setFuzzySearchQuery}
       />
     </Box>
     </ThemeProvider>

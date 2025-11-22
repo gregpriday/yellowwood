@@ -184,7 +184,7 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
 
     // Command/Filter Actions
     if (input === '/') {
-      events.emit('ui:modal:open', { id: 'command-bar' });
+      events.emit('ui:modal:open', { id: 'fuzzy-search', context: { initialQuery: '' } });
       return;
     }
 

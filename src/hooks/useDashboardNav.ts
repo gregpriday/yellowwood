@@ -180,15 +180,8 @@ export function useDashboardNav({
         return;
       }
 
-      if (key.home) {
-        focusExact(0);
-        return;
-      }
-
-      if (key.end) {
-        focusExact(worktrees.length - 1);
-        return;
-      }
+      // Note: home/end are handled in useKeyboard via stdin event
+      // They are not available on the key object in Ink 6.5
 
       handlePrimaryActions(input, key);
     },
