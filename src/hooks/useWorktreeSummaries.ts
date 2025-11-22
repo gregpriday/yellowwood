@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Worktree } from '../types/index.js';
+import type { Worktree, WorktreeChanges } from '../types/index.js';
 import { enrichWorktreesWithSummaries } from '../services/ai/worktree.js';
+import { categorizeWorktree } from '../utils/worktreeMood.js';
 
 /**
  * Hook to manage AI-generated summaries for worktrees.
@@ -14,7 +15,8 @@ import { enrichWorktreesWithSummaries } from '../services/ai/worktree.js';
 export function useWorktreeSummaries(
   worktrees: Worktree[],
   mainBranch: string = 'main',
-  refreshIntervalMs: number = 0
+  refreshIntervalMs: number = 0,
+  worktreeChanges?: Map<string, WorktreeChanges>
 ): Worktree[] {
   const [enrichedWorktrees, setEnrichedWorktrees] = useState<Worktree[]>(worktrees);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -27,39 +29,70 @@ export function useWorktreeSummaries(
 
   // Enrich worktrees with AI summaries
   const enrichWorktrees = useCallback(async () => {
-    // Skip if no API key or already enriching
+    // Skip if already enriching or no worktrees
     const hasApiKey = !!process.env.OPENAI_API_KEY;
-    if (!hasApiKey || isEnrichingRef.current || worktrees.length === 0) {
+    if (isEnrichingRef.current || worktrees.length === 0) {
       return;
     }
 
     isEnrichingRef.current = true;
 
     try {
-      // Create a mutable copy of worktrees
-      const mutableWorktrees = worktrees.map(wt => ({ ...wt }));
+      // Create a mutable copy of worktrees and prioritize those with changes
+      const mutableWorktreesById = new Map<string, Worktree>();
+      for (const wt of worktrees) {
+        mutableWorktreesById.set(wt.id, { ...wt });
+      }
 
-      // Enrich with summaries (this updates in place and calls onUpdate)
-      await enrichWorktreesWithSummaries(
-        mutableWorktrees,
-        mainBranch,
-        (updatedWorktree) => {
-          // Update state as each summary completes
-          setEnrichedWorktrees(prev =>
-            prev.map(wt =>
-              wt.id === updatedWorktree.id
-                ? { ...wt, ...updatedWorktree }
-                : wt
-            )
-          );
-        }
+      const getChangedCount = (id: string) =>
+        worktreeChanges?.get(id)?.changedFileCount ?? 0;
+
+      const prioritizedWorktrees = Array.from(mutableWorktreesById.values()).sort(
+        (a, b) => getChangedCount(b.id) - getChangedCount(a.id)
       );
+
+      // Helper to apply updates to state in original order
+      const applyUpdate = (updated: Worktree) => {
+        setEnrichedWorktrees(prev =>
+          prev.map(wt => (wt.id === updated.id ? { ...wt, ...updated } : wt))
+        );
+      };
+
+      if (hasApiKey) {
+        await enrichWorktreesWithSummaries(
+          prioritizedWorktrees,
+          mainBranch,
+          (updatedWorktree) => {
+            // Async mood update; fire-and-forget to avoid blocking summary flow
+            void (async () => {
+              const mood = await categorizeWorktree(
+                updatedWorktree,
+                worktreeChanges?.get(updatedWorktree.id),
+                mainBranch
+              );
+              applyUpdate({ ...updatedWorktree, mood });
+            })();
+          }
+        );
+      } else {
+        // No API key: still categorize mood so UI can reflect state
+        for (const wt of prioritizedWorktrees) {
+          const mood = await categorizeWorktree(
+            wt,
+            worktreeChanges?.get(wt.id),
+            mainBranch
+          );
+          wt.mood = mood;
+          wt.summaryLoading = false;
+          applyUpdate(wt);
+        }
+      }
     } catch (error) {
       console.error('[canopy] useWorktreeSummaries: enrichment failed', error);
     } finally {
       isEnrichingRef.current = false;
     }
-  }, [mainBranch, worktrees]);
+  }, [mainBranch, worktreeChanges, worktrees]);
 
   // Initial enrichment when worktrees change
   useEffect(() => {
