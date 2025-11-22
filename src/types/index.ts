@@ -12,6 +12,8 @@ export interface WorktreeChanges {
   lastUpdated: number;
 }
 
+export type WorktreeMood = 'stable' | 'active' | 'stale' | 'error';
+
 export interface TreeNode {
   name: string;
   path: string;
@@ -62,6 +64,9 @@ export interface Worktree {
 
   /** Recent git status changes for this worktree */
   changes?: Array<{ path: string; status: GitStatus }>;
+
+  /** High-level mood/state for dashboard sorting */
+  mood?: WorktreeMood;
 }
 
 export interface OpenerConfig {
@@ -142,7 +147,7 @@ export interface CanopyConfig {
     showStatusBar?: boolean;
     activePathHighlight?: boolean;
     activePathColor?: 'cyan' | 'blue' | 'green';
-    moodGradients?: boolean; // Enable mood-based header gradients (default: true)
+  moodGradients?: boolean; // Enable mood-based header gradients (default: true)
   };
   worktrees?: {
     enable: boolean;           // Master toggle for worktree features

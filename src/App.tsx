@@ -89,13 +89,6 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     reinitialize,
   } = useAppLifecycle({ cwd, initialConfig, noWatch, noGit });
 
-  // Enrich worktrees with AI-generated summaries
-  const enrichedWorktrees = useWorktreeSummaries(
-    worktrees,
-    'main',
-    config.worktrees?.refreshIntervalMs || 0
-  );
-
   // Local notification state (merged with lifecycle notifications)
   const [notification, setNotification] = useState<Notification | null>(null);
 
@@ -149,13 +142,21 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
     worktreeChanges,
     clear: clearWorktreeStatuses,
   } = useMultiWorktreeStatus(
-    enrichedWorktrees,
+    worktrees,
     activeWorktreeId,
     {
       activeMs: 1500,
       backgroundMs: config.worktrees?.refreshIntervalMs ?? 10000,
     },
     !noGit && config.showGitStatus
+  );
+
+  // Enrich worktrees with AI-generated summaries
+  const enrichedWorktrees = useWorktreeSummaries(
+    worktrees,
+    'main',
+    config.worktrees?.refreshIntervalMs || 0,
+    worktreeChanges
   );
 
   // Mutable initial selection state for session restoration during worktree switches
@@ -174,6 +175,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
 
   // Track latest requested worktree to prevent race conditions during rapid switches
   const latestWorktreeSwitchRef = useRef<string | null>(null);
+  const pendingCycleDirectionRef = useRef<number | null>(null);
 
   // Track worktree switching state for UI feedback
   const [isSwitchingWorktree, setIsSwitchingWorktree] = useState(false);
@@ -707,8 +709,17 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   // Listen for sys:worktree:cycle (from /wt next or /wt prev)
   useEffect(() => {
     return events.on('sys:worktree:cycle', async ({ direction }) => {
-      const worktreeList = worktreesRef.current;
+      const worktreeList =
+        worktreesRef.current.length > 0
+          ? worktreesRef.current
+          : (worktreesWithStatus.length > 0
+            ? worktreesWithStatus
+            : worktrees);
       if (worktreeList.length <= 1) {
+        if (lifecycleStatus !== 'ready') {
+          pendingCycleDirectionRef.current = direction;
+          return;
+        }
         events.emit('ui:notify', {
           type: 'warning',
           message: 'No other worktrees to switch to',
@@ -722,7 +733,28 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
 
       await handleSwitchWorktree(nextWorktree);
     });
-  }, [activeWorktreeId, handleSwitchWorktree]);
+  }, [activeWorktreeId, handleSwitchWorktree, lifecycleStatus, worktreesWithStatus, worktrees]);
+
+  useEffect(() => {
+    if (pendingCycleDirectionRef.current === null) {
+      return;
+    }
+    if (worktreesWithStatus.length <= 1 || lifecycleStatus !== 'ready') {
+      return;
+    }
+
+    const direction = pendingCycleDirectionRef.current;
+    pendingCycleDirectionRef.current = null;
+
+    const worktreeList = worktreesWithStatus;
+    const currentIndex = worktreeList.findIndex(wt => wt.id === activeWorktreeId);
+    const nextIndex = (currentIndex + direction + worktreeList.length) % worktreeList.length;
+    const nextWorktree = worktreeList[nextIndex];
+
+    if (nextWorktree) {
+      void handleSwitchWorktree(nextWorktree);
+    }
+  }, [activeWorktreeId, handleSwitchWorktree, lifecycleStatus, worktreesWithStatus]);
 
   // Listen for sys:worktree:selectByName (from /wt <pattern>)
   useEffect(() => {
