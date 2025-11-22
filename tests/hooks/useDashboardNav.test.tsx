@@ -145,6 +145,7 @@ describe('useDashboardNav', () => {
 
     stdin.write('\x1B[B');
     await tick();
+    await tick();
     stdin.write('\x1B[B'); // move to index 2
     await tick();
     await tick();
