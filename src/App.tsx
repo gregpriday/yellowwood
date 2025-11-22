@@ -24,6 +24,8 @@ import { useAIStatus } from './hooks/useAIStatus.js';
 import { useProjectIdentity } from './hooks/useProjectIdentity.js';
 import { useWorktreeSummaries } from './hooks/useWorktreeSummaries.js';
 import { useCopyTree } from './hooks/useCopyTree.js';
+import { useRecentActivity } from './hooks/useRecentActivity.js';
+import { RecentActivityPanel } from './components/RecentActivityPanel.js';
 import { saveSessionState, loadSessionState } from './utils/state.js';
 import { events, type ModalId, type ModalContextMap } from './services/events.js'; // Import event bus
 import { clearTerminalScreen } from './utils/terminal.js';
@@ -40,6 +42,14 @@ interface AppProps {
   noGit?: boolean;
   initialFilter?: string;
 }
+
+const MODAL_CLOSE_PRIORITY: ModalId[] = [
+  'help',
+  'context-menu',
+  'worktree',
+  'command-bar',
+  'recent-activity',
+];
 
 const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, noGit, initialFilter }) => {
   const { exit } = useApp();
@@ -188,6 +198,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   const isWorktreePanelOpen = activeModals.has('worktree');
   const showHelpModal = activeModals.has('help');
   const contextMenuOpen = activeModals.has('context-menu');
+  const isRecentActivityOpen = activeModals.has('recent-activity');
   // Sync active worktree/path from lifecycle on initialization
   useEffect(() => {
     if (lifecycleStatus === 'ready') {
@@ -223,6 +234,13 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   const { status: aiStatus, isAnalyzing } = useAIStatus(activeRootPath, gitStatus, isGitLoading);
 
   const projectIdentity = useProjectIdentity(activeRootPath);
+
+  // Initialize Recent Activity Hook
+  const {
+    recentEvents,
+    lastEvent,
+    clearEvents
+  } = useRecentActivity(activeRootPath, config.recentActivity || { enabled: false, windowMinutes: 10, maxEntries: 50 });
 
   // Resolve theme mode (auto detects terminal background)
   const themeMode = useMemo(() => {
@@ -463,9 +481,21 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
   }, [gitOnlyMode, fileTree, expandedFolders, collectAllFolderPaths]);
 
   const handleClearFilter = () => {
-    if (activeModals.size > 0) {
-      events.emit('ui:modal:close', { id: undefined });
-    } else if (filterActive) {
+    const closeModalByPriority = () => {
+      for (const modalId of MODAL_CLOSE_PRIORITY) {
+        if (activeModals.has(modalId)) {
+          events.emit('ui:modal:close', { id: modalId });
+          return true;
+        }
+      }
+      return false;
+    };
+
+    if (closeModalByPriority()) {
+      return;
+    }
+
+    if (filterActive) {
       setFilterActive(false);
       setFilterQuery('');
       events.emit('ui:notify', {
@@ -554,6 +584,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       setFilterActive(false);
       setFilterQuery('');
       clearGitStatus();
+      clearEvents(); // Clear activity buffer for new worktree
 
       // 6. Notify user of success
       events.emit('ui:modal:close', { id: 'worktree' });
@@ -585,7 +616,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         setIsSwitchingWorktree(false);
       }
     }
-  }, [activeWorktreeId, clearGitStatus, expandedFolders, selectedPath]);
+  }, [activeWorktreeId, clearGitStatus, clearEvents, expandedFolders, gitOnlyMode, selectedPath]);
 
   useEffect(() => {
     return events.on('sys:worktree:switch', async ({ worktreeId }) => {
@@ -653,6 +684,18 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
       }
     });
   }, [enrichedWorktrees, handleSwitchWorktree]);
+
+  // Handle navigation from Recent Activity Panel to tree
+  const handleSelectActivityPath = useCallback((targetPath: string) => {
+    // Close the modal
+    events.emit('ui:modal:close', { id: 'recent-activity' });
+
+    // Convert relative path to absolute
+    const absolutePath = path.join(activeRootPath, targetPath);
+
+    // Emit navigation event (existing nav:select handler will expand parents and set selection)
+    events.emit('nav:select', { path: absolutePath });
+  }, [activeRootPath]);
 
   // handleOpenSelectedFile removed
 
@@ -861,6 +904,14 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
           worktrees={enrichedWorktrees}
           activeWorktreeId={activeWorktreeId}
           onClose={() => events.emit('ui:modal:close', { id: 'worktree' })}
+        />
+      )}
+      {isRecentActivityOpen && (
+        <RecentActivityPanel
+          visible={isRecentActivityOpen}
+          events={recentEvents}
+          onClose={() => events.emit('ui:modal:close', { id: 'recent-activity' })}
+          onSelectPath={handleSelectActivityPath}
         />
       )}
       <HelpModal
