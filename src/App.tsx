@@ -246,6 +246,13 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
 
   const currentWorktree = worktreesWithStatus.find(wt => wt.id === activeWorktreeId) || null;
 
+  // Compute active worktree count (worktrees with changes)
+  const activeWorktreeCount = useMemo(() => {
+    return worktreesWithStatus.filter(wt =>
+      worktreeChanges.get(wt.id)?.changedFileCount ?? 0 > 0
+    ).length;
+  }, [worktreesWithStatus, worktreeChanges]);
+
   const activeWorktreeChanges = useMemo(
     () => (activeWorktreeId ? worktreeChanges.get(activeWorktreeId) : undefined),
     [activeWorktreeId, worktreeChanges]
@@ -1054,6 +1061,7 @@ const AppContent: React.FC<AppProps> = ({ cwd, config: initialConfig, noWatch, n
         filterQuery={filterQuery}
         currentWorktree={currentWorktree}
         worktreeCount={worktreesWithStatus.length}
+        activeWorktreeCount={activeWorktreeCount}
           onWorktreeClick={() => events.emit('ui:modal:open', { id: 'worktree' })}
           identity={projectIdentity}
           config={effectiveConfig}
