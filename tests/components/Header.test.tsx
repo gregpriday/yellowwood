@@ -58,6 +58,7 @@ describe('Header', () => {
           filterQuery=""
           currentWorktree={mockWorktree}
           worktreeCount={3}
+          activeWorktreeCount={1}
           identity={mockIdentity}
           config={DEFAULT_CONFIG}
         />
@@ -65,9 +66,8 @@ describe('Header', () => {
 
       const output = lastFrame();
       expect(output).toContain('Canopy');
-      expect(output).toContain('wt');
-      expect(output).toContain('[main]');
-      expect(output).toContain('(3)');
+      expect(output).toContain('main');
+      expect(output).toContain('(3 worktrees, 1 active)');
     });
 
     it('shows relative path when in worktree subdirectory', () => {
@@ -176,9 +176,8 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('wt');
-      expect(output).toContain('[main]');
-      expect(output).toContain('(2)');
+      expect(output).toContain('main');
+      expect(output).toContain('(2 worktrees, 0 active)');
       expect(output).toContain('[*]');
       expect(output).toContain('*.tsx');
     });
@@ -230,7 +229,7 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('(1)');
+      expect(output).toContain('(1 worktree');
     });
 
     it('handles multiple worktrees', () => {
@@ -247,7 +246,65 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('(5)');
+      expect(output).toContain('(5 worktrees');
+    });
+
+    it('shows active worktree count when provided', () => {
+      const { lastFrame } = renderWithTheme(
+        <Header
+          cwd="/Users/dev/project"
+          filterActive={false}
+          filterQuery=""
+          currentWorktree={mockWorktree}
+          worktreeCount={5}
+          activeWorktreeCount={2}
+          identity={mockIdentity}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      const output = lastFrame();
+      expect(output).toContain('(5 worktrees, 2 active)');
+    });
+
+    it('shows zero active worktrees correctly', () => {
+      const { lastFrame } = renderWithTheme(
+        <Header
+          cwd="/Users/dev/project"
+          filterActive={false}
+          filterQuery=""
+          currentWorktree={mockWorktree}
+          worktreeCount={3}
+          activeWorktreeCount={0}
+          identity={mockIdentity}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      const output = lastFrame();
+      expect(output).toContain('(3 worktrees, 0 active)');
+    });
+
+    it('renders badge without square brackets around branch name', () => {
+      const { lastFrame } = renderWithTheme(
+        <Header
+          cwd="/Users/dev/project"
+          filterActive={false}
+          filterQuery=""
+          currentWorktree={mockWorktree}
+          worktreeCount={3}
+          activeWorktreeCount={1}
+          identity={mockIdentity}
+          config={DEFAULT_CONFIG}
+        />
+      );
+
+      const output = lastFrame();
+      // Should have branch name without brackets
+      expect(output).toContain('main');
+      expect(output).not.toMatch(/\[main\]/);
+      // Should have the new format
+      expect(output).toContain('(3 worktrees, 1 active)');
     });
 
     it('handles detached HEAD state', () => {
@@ -272,7 +329,7 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('[detached]');
+      expect(output).toContain('detached');
     });
 
     it('handles feature branch with slashes', () => {
@@ -297,7 +354,7 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('[feature/auth]');
+      expect(output).toContain('feature/auth');
     });
 
     it('truncates very long branch names', () => {
@@ -323,7 +380,7 @@ describe('Header', () => {
 
       const output = lastFrame();
       // Should contain exact truncated string (19 chars + ellipsis = 20 total)
-      expect(output).toContain('[feature/this-is-a-v…]');
+      expect(output).toContain('feature/this-is-a-v…');
       // Full branch name should NOT be present
       expect(output).not.toContain('feature/this-is-a-very-long-branch-name-that-should-be-truncated');
     });
@@ -342,9 +399,8 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('wt');
-      expect(output).toContain('[main]');
-      expect(output).toContain('(0)');
+      expect(output).toContain('main');
+      expect(output).toContain('(0 worktrees, 0 active)');
     });
 
     it('does not show worktree indicator when currentWorktree is null', () => {
@@ -361,7 +417,7 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).not.toContain('wt');
+      expect(output).not.toContain('worktrees');
     });
 
     it('does not show worktree indicator when currentWorktree is undefined', () => {
@@ -378,7 +434,7 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).not.toContain('wt');
+      expect(output).not.toContain('worktrees');
     });
 
     it('uses worktree name as fallback when branch is undefined (detached HEAD)', () => {
@@ -403,8 +459,8 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('[canopy-issue-42]');
-      expect(output).not.toContain('[detached]');
+      expect(output).toContain('canopy-issue-42');
+      expect(output).not.toContain('detached');
     });
   });
 
@@ -502,9 +558,8 @@ describe('Header', () => {
 
       const output = lastFrame();
       expect(output).toContain('Canopy');
-      expect(output).not.toContain('wt');
-      expect(output).not.toContain('[main]');
-      expect(output).not.toContain('(3)');
+      expect(output).not.toContain('main');
+      expect(output).not.toContain('worktrees');
     });
 
     it('shows worktree indicator when showInHeader is true (default)', () => {
@@ -521,9 +576,8 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('wt');
-      expect(output).toContain('[main]');
-      expect(output).toContain('(3)');
+      expect(output).toContain('main');
+      expect(output).toContain('(3 worktrees');
     });
 
     it('defaults to showing worktree indicator when config.worktrees is undefined', () => {
@@ -545,8 +599,8 @@ describe('Header', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('wt');
-      expect(output).toContain('[main]');
+      expect(output).toContain('main');
+      expect(output).toContain('worktrees');
     });
   });
 });

@@ -13,6 +13,7 @@ interface HeaderProps {
   filterQuery: string;
   currentWorktree?: Worktree | null;
   worktreeCount?: number;
+  activeWorktreeCount?: number;
   onWorktreeClick?: () => void;
   identity: ProjectIdentity;
   config: CanopyConfig;
@@ -29,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   filterQuery,
   currentWorktree,
   worktreeCount = 0,
+  activeWorktreeCount = 0,
   onWorktreeClick,
   identity,
   config,
@@ -74,6 +76,9 @@ export const Header: React.FC<HeaderProps> = ({
   // Show git-only mode button only when git is enabled
   const showGitOnlyButton = gitEnabled && onToggleGitOnlyMode !== undefined;
 
+  const worktreeLabel = `${worktreeCount} ${worktreeCount === 1 ? 'worktree' : 'worktrees'}`;
+  const activeLabel = `${activeWorktreeCount} active`;
+
   // Calculate mood-based gradient (or use project identity)
   const gradient = getHeaderGradient(
     gitStatus,
@@ -91,18 +96,22 @@ export const Header: React.FC<HeaderProps> = ({
       </Gradient>
 
       {showWorktreeIndicator && (
-        <>
+        <Box
+          flexDirection="row"
+          alignItems="center"
+          // @ts-ignore - Ink's Box does not include `onClick` in the current type definitions
+          onClick={onWorktreeClick}
+        >
           <Text dimColor> • </Text>
-          <Text dimColor>wt </Text>
           <Text
             color={isSwitching ? palette.alert.warning : palette.accent.primary}
             bold={onWorktreeClick !== undefined}
             underline={onWorktreeClick !== undefined}
           >
-            {isSwitching ? '⟳ ' : ''}[{truncatedBranchName}]
+            {isSwitching ? '⟳ ' : ''}{truncatedBranchName}
           </Text>
-          <Text dimColor> ({worktreeCount})</Text>
-        </>
+          <Text dimColor> ({worktreeLabel}, {activeLabel})</Text>
+        </Box>
       )}
 
       <Text dimColor> • </Text>
