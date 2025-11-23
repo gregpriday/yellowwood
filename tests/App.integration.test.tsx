@@ -651,12 +651,13 @@ describe('App integration - dashboard mode', () => {
 
     const output = lastFrame();
 
-    // Dashboard should be rendered - verify we're not in tree mode
-    // Tree mode would show file listings, dashboard shows worktree cards
+    // Dashboard is rendered by default (verifiable by examining the output)
     expect(output).toBeDefined();
-    // In dashboard mode, we should see worktree information in the header
-    expect(output).toContain('main');
-    // Dashboard mode is confirmed by the absence of tree-specific file listings
+    expect(output!.length > 0).toBe(true);
+    // In dashboard mode, we show the dashboard view which contains worktree/session info
+    // Verify the view is NOT showing typical tree-mode file listings
+    // Tree mode would show the file structure with '.gitignore', 'src/', 'tests/', etc.
+    expect(output?.includes('.gitignore')).toBe(false);
   });
 
   it('switches from dashboard to tree mode when ui:view:mode event is emitted', async () => {
@@ -674,8 +675,10 @@ describe('App integration - dashboard mode', () => {
 
     // Initially in dashboard mode
     let output = lastFrame();
-    const initialFrame = output;
     expect(output).toBeDefined();
+    // Dashboard shows worktree cards - should contain worktree name
+    const dashboardOutput = output!;
+    expect(dashboardOutput).toContain('main');
 
     // Switch to tree mode
     events.emit('ui:view:mode', { mode: 'tree' });
@@ -683,11 +686,12 @@ describe('App integration - dashboard mode', () => {
     // Give it time to process
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Should now be in tree mode - the output should have changed
+    // Should now be in tree mode - the output should differ from dashboard
     output = lastFrame();
     expect(output).toBeDefined();
-    // Basic verification that something changed (modes render differently)
-    // This is a smoke test - detailed tree rendering is tested in TreeView tests
+    // Verify the view actually changed by checking that output is different
+    // Tree mode will show different UI structure than dashboard
+    expect(output !== dashboardOutput).toBe(true);
   });
 
   it('uses focused worktree root when copying from dashboard', async () => {
